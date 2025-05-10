@@ -7,7 +7,7 @@ import { ChevronLeft, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { setClusterHistory } from "../redux/clusterSlice";
 import { updateProject } from "../redux/projectsSlice";
-import { featureRanking } from "../utils/apiUtils";
+// import { featureRanking } from "../utils/apiUtils";
 
 const SelectKPI = () => {
   const location = useLocation();
