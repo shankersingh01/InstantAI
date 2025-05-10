@@ -39,8 +39,8 @@ InstantAI is a powerful data analysis and clustering platform that helps users u
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/instant-ai.git
-cd instant-ai-frontend-2
+git clone https://github.com/shankersingh01/InstantAI.git
+cd InstantAI
 ```
 
 2. Install dependencies:
@@ -84,15 +84,20 @@ yarn build
 ## 🏗️ Project Structure
 
 ```
-instant-ai-frontend-2/
-├── src/
-│   ├── Components/     # Reusable UI components
-│   ├── Pages/         # Main application pages
-│   ├── redux/         # State management
-│   ├── utils/         # Utility functions
-│   └── App.jsx        # Main application component
-├── public/            # Static assets
-└── index.html         # Entry HTML file
+InstantAI/
+├── src/              # Source code
+│   ├── Components/   # Reusable UI components
+│   ├── Pages/        # Main application pages
+│   ├── redux/        # State management
+│   ├── utils/        # Utility functions
+│   └── App.jsx       # Main application component
+├── public/           # Static assets
+├── dist/             # Build output
+├── index.html        # Entry HTML file
+├── package.json      # Project dependencies
+├── vite.config.js    # Vite configuration
+├── tailwind.config.js # Tailwind CSS configuration
+└── postcss.config.js # PostCSS configuration
 ```
 
 ## 🔄 API Integration
@@ -150,7 +155,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 👥 Authors
 
-- Your Name - Initial work
+- [Shanker Singh](https://github.com/shankersingh01) - Initial work
 
 ## 🙏 Acknowledgments
 
