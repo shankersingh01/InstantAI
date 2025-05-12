@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { ArrowBigDownDash, ChevronRight } from "lucide-react";
@@ -54,10 +54,12 @@ const ClusteringComponent = () => {
   const navigate = useNavigate();
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
+  const hasProcessed = useRef(false);
 
   // Add useEffect to call process API on mount and when KPI changes
   useEffect(() => {
-    if (newkpi && project_id && !clusterTree) {
+    if (newkpi && project_id && !clusterTree && !hasProcessed.current) {
+      hasProcessed.current = true;
       processData(newkpi).catch((error) => {
         console.error("Failed to process data:", error);
         setError(error.message || "Failed to process data");
