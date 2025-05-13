@@ -181,10 +181,7 @@ const Home = () => {
         throw new Error("Invalid project ID");
       }
 
-      const response = await axios.get(
-        `${baseUrl}/projects/${projectId}/status`
-      );
-
+      const response = await   axiosInstance.get(`/${com_id}/projects/${projectId}`);
       if (!response.data) {
         throw new Error("Invalid response from server");
       }

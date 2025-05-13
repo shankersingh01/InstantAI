@@ -191,6 +191,7 @@ function ConfigurationContent() {
         kpiList?.length > 0
       ) {
         setReUpload(true);
+        setValidated(true);
       }
     } catch (err) {
       console.error("Error in Configuration component:", err);
@@ -286,11 +287,11 @@ function ConfigurationContent() {
     }
 
     // Check file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
-      setUploadError("File size should not exceed 10MB");
-      return false;
-    }
+    // const maxSize = 10 * 1024 * 1024; // 10MB
+    // if (file.size > maxSize) {
+    //   setUploadError("File size should not exceed 10MB");
+    //   return false;
+    // }
 
     return true;
   };

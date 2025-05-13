@@ -18,6 +18,13 @@ import WorkbenchModal from "../Components/WorkbenchModal";
 import DefinationModel from "../Components/DefinationModel";
 import SelectableClusterPopup from "../Components/SelectableClustorPopup";
 
+// Utility function for Indian number formatting
+function formatIndianNumber(num) {
+  if (typeof num !== "number") num = Number(num);
+  if (isNaN(num)) return num;
+  return num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
 const ClusteringComponent = () => {
   const location = useLocation();
   const baseUrl = import.meta.env.VITE_BASE_URL;
@@ -129,7 +136,7 @@ const ClusteringComponent = () => {
       console.log("Process response received:", response.data);
 
       if (response.status === 200 && response.data) {
-        const clusterTree = response.data.cluster_tree;
+        const clusterTree = response.data.cluster_tree || response.data.message;
         console.log("Cluster tree:", clusterTree);
         setClusterTree(clusterTree);
 
@@ -199,6 +206,7 @@ const ClusteringComponent = () => {
 
   const handleCellClick = (feature, clusterIndex, value) => {
     setSelectedCell({ feature, clusterIndex, currentLevel, value });
+    setSelectedClusterIndex(clusterIndex); //for cell selection and analyze it
     setOpenDropdowns({});
   };
 
@@ -580,71 +588,70 @@ const ClusteringComponent = () => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
                               {feature}
                             </td>
-                            {currentClusters.map((_, clusterIndex) => (
-                              <td
-                                key={clusterIndex}
-                                className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                  selectedCell?.feature === feature &&
-                                  selectedCell?.clusterIndex === clusterIndex
-                                    ? "bg-indigo-100"
-                                    : ""
-                                }`}
-                              >
-                                <div
+                            {currentClusters.map((_, clusterIndex) => {
+                              const value =
+                                groupedClusters.top1?.[feature]?.[clusterIndex]
+                                  ?.original?.Value ??
+                                groupedClusters.mean?.[feature]?.[clusterIndex]
+                                  ?.original?.Mean ??
+                                0;
+                              const percentage =
+                                groupedClusters.top1[feature]?.[clusterIndex]
+                                  ?.original?.Percentage;
+                              return (
+                                <td
+                                  key={clusterIndex}
+                                  className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                    selectedCell?.feature === feature &&
+                                    selectedCell?.clusterIndex === clusterIndex
+                                      ? "bg-indigo-100"
+                                      : ""
+                                  }`}
                                   onClick={() =>
                                     handleCellClick(
                                       feature,
                                       clusterIndex,
-                                      groupedClusters.top1?.[feature]?.[
-                                        clusterIndex
-                                      ]?.original?.Value ??
-                                        groupedClusters.mean?.[feature]?.[
-                                          clusterIndex
-                                        ]?.original?.Mean ??
-                                        0
+                                      value
                                     )
                                   }
-                                  className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline"
                                 >
-                                  {groupedClusters.top1?.[feature]?.[
-                                    clusterIndex
-                                  ]?.original?.Value ??
-                                    groupedClusters.mean?.[feature]?.[
-                                      clusterIndex
-                                    ]?.original?.Mean ??
-                                    0}
-                                  <span className="ml-2 text-sm text-gray-500">
-                                    -{" "}
-                                    {groupedClusters.top1[feature][clusterIndex]
-                                      ?.original.Percentage || 0}{" "}
-                                    <span
-                                      className="pl-4"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleDropdown(
-                                          e,
-                                          feature,
-                                          clusterIndex
-                                        );
-                                      }}
-                                    >
-                                      ▼
-                                    </span>
-                                  </span>
-                                </div>
-                                {openDropdowns[
-                                  `${feature}-${clusterIndex}`
-                                ] && (
-                                  <ClusterDropdown
-                                    groupedClusters={groupedClusters}
-                                    feature={feature}
-                                    handleCellClick={handleCellClick}
-                                    toggleDropdown={toggleDropdown}
-                                    clusterIndex={clusterIndex}
-                                  />
-                                )}
-                              </td>
-                            ))}
+                                  <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                    {typeof value === "number" && !isNaN(value)
+                                      ? formatIndianNumber(value)
+                                      : value}
+                                    {percentage !== undefined && (
+                                      <span className="ml-2 text-sm text-gray-500">
+                                        - {percentage}{" "}
+                                        <span
+                                          className="pl-4"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleDropdown(
+                                              e,
+                                              feature,
+                                              clusterIndex
+                                            );
+                                          }}
+                                        >
+                                          ▼
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {openDropdowns[
+                                    `${feature}-${clusterIndex}`
+                                  ] && (
+                                    <ClusterDropdown
+                                      groupedClusters={groupedClusters}
+                                      feature={feature}
+                                      handleCellClick={handleCellClick}
+                                      toggleDropdown={toggleDropdown}
+                                      clusterIndex={clusterIndex}
+                                    />
+                                  )}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                         {filterImportantFeatures(
@@ -654,56 +661,39 @@ const ClusteringComponent = () => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
                               {feature}
                             </td>
-                            {currentClusters.map((_, clusterIndex) => (
-                              <td
-                                key={clusterIndex}
-                                className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                  selectedCell?.feature === feature &&
-                                  selectedCell?.clusterIndex === clusterIndex
-                                    ? "bg-indigo-100"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  handleCellClick(
-                                    feature,
-                                    clusterIndex,
-                                    groupedClusters.top1?.[feature]?.[
-                                      clusterIndex
-                                    ]?.original?.Value ??
-                                      groupedClusters.mean?.[feature]?.[
-                                        clusterIndex
-                                      ]?.original?.Mean ??
-                                      0
-                                  )
-                                }
-                                onDoubleClick={() => {
-                                  setIsOpen1(true);
-                                  setSelectedCluster(clusterIndex + 1);
-                                }}
-                              >
-                                <div
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleDropdown(e, feature, clusterIndex);
-                                  }}
-                                  className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors"
+                            {currentClusters.map((_, clusterIndex) => {
+                              const mean =
+                                groupedClusters.mean?.[feature]?.[clusterIndex]
+                                  ?.original?.Mean;
+                              const count =
+                                groupedClusters.mean?.[feature]?.[clusterIndex]
+                                  ?.original?.Count;
+                              return (
+                                <td
+                                  key={clusterIndex}
+                                  className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                    selectedCell?.feature === feature &&
+                                    selectedCell?.clusterIndex === clusterIndex
+                                      ? "bg-indigo-100"
+                                      : ""
+                                  }`}
+                                  onClick={() =>
+                                    handleCellClick(feature, clusterIndex, mean)
+                                  }
                                 >
-                                  {groupedClusters.top1?.[feature]?.[
-                                    clusterIndex
-                                  ]?.original?.Mean?.toFixed(4) ??
-                                    groupedClusters.mean?.[feature]?.[
-                                      clusterIndex
-                                    ]?.original?.Mean?.toFixed(4) ??
-                                    0}
-                                  <span className="ml-2 text-sm text-gray-500">
-                                    (
-                                    {groupedClusters.mean[feature][clusterIndex]
-                                      ?.original.Count || 0}
-                                    )
-                                  </span>
-                                </div>
-                              </td>
-                            ))}
+                                  <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors">
+                                    {typeof mean === "number" && !isNaN(mean)
+                                      ? formatIndianNumber(mean)
+                                      : mean}
+                                    {count !== undefined && (
+                                      <span className="ml-2 text-sm text-gray-500">
+                                        ({formatIndianNumber(count)})
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                       </tbody>
