@@ -1,22 +1,20 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { ArrowBigDownDash, ChevronRight } from "lucide-react";
 import ClusterHistorySection from "../Components/ClusterHistorySection";
 import ClusterTreeVisualization from "../Components/ClusterTreeVisualization";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  setClusterHistory,
-  setClusters,
-  setSelectedIndex,
-} from "../redux/clusterSlice";
+import { setClusterHistory, setClusters } from "../redux/clusterSlice";
 import { CircularProgress, Typography, Box } from "@mui/material";
 import ClusterDropdown from "../Components/ClusterDropdown";
 import WorkbenchModal from "../Components/WorkbenchModal";
 import DefinationModel from "../Components/DefinationModel";
 import SelectableClusterPopup from "../Components/SelectableClustorPopup";
+import { restoreProjectState } from "../redux/projectsSlice";
+import axiosInstance from "../utils/axiosInstance";
 
 // Utility function for Indian number formatting
 function formatIndianNumber(num) {
@@ -34,7 +32,8 @@ const ClusteringComponent = () => {
     activeKPI || (kpiList && kpiList.length > 0 ? kpiList[0] : "")
   );
   const [extractedClusters, setExtractedClusters] = useState([]);
-  const [currentPath, setCurrentPath] = useState([]);
+  const [journey, setJourney] = useState([]);
+  const [currentSelectionIndex, setCurrentSelectionIndex] = useState(-1); // -1 means root
   const [error, setError] = useState(null);
   const [currentLevel, setCurrentLevel] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,20 +60,64 @@ const ClusteringComponent = () => {
   const navigate = useNavigate();
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
-  const hasProcessed = useRef(false);
 
-  // Add useEffect to call process API on mount and when KPI changes
+  // Fetch and restore project state on mount
   useEffect(() => {
-    if (newkpi && project_id && !clusterTree && !hasProcessed.current) {
-      hasProcessed.current = true;
-      processData(newkpi).catch((error) => {
-        console.error("Failed to process data:", error);
-        setError(error.message || "Failed to process data");
+    const fetchAndRestoreProject = async () => {
+      try {
+        const response = await axiosInstance.get(
+          `/${com_id}/projects/${project_id}`
+        );
+        if (response.data) {
+          dispatch(
+            restoreProjectState({
+              projectId: project_id,
+              project_id: project_id,
+              columns: (response.data.total_columns || []).map((name, idx) => ({
+                id: idx + 1,
+                name,
+                type: "string",
+                description: name,
+              })),
+              importantColumnNames: response.data.important_columns || [],
+              kpiList: response.data.kpi_columns || [],
+              droppedColumns: response.data.dropped_columns || [],
+              uploadedFileData: response.data.uploadedFileData || [],
+              selectedKpi: response.data.selectedKpi || null,
+              data_uploaded: response.data.data_uploaded,
+              clusters: response.data.clusters || null,
+              currentStep: response.data.clusters
+                ? "clustering"
+                : response.data.data_uploaded
+                ? "analysis"
+                : "configuration",
+              analysisComplete: !!response.data.clusters,
+            })
+          );
+          // If clusters exist, use them directly
+          if (response.data.clusters) {
+            setClusterTree(response.data.clusters);
+            // Set extractedClusters to the children of the root node for the current KPI
+            const kpi = newkpi || Object.keys(response.data.clusters)[0];
+            setExtractedClusters(response.data.clusters[kpi]?.children || []);
+            setLoading(false);
+            return;
+          }
+        }
+        // If no clusters, proceed with processData as usual
+        if (newkpi && project_id) {
+          processData(newkpi);
+        }
+      } catch (error) {
+        setError(error);
         setLoading(false);
-      });
+      }
+    };
+    if (com_id && project_id) {
+      fetchAndRestoreProject();
     }
     // eslint-disable-next-line
-  }, [newkpi, project_id]);
+  }, [com_id, project_id, newkpi]);
 
   // Data transformation functions
   const transformClusterData = (clusters) => {
@@ -218,41 +261,54 @@ const ClusteringComponent = () => {
     }));
   };
 
-  const navigateToPath = (path) => {
-    setBreadcrumbPath(path);
-    setSelectedClusterIndex(null);
-    // Update groupedClusters for the new level
-    const newNode =
-      path.length === 0
-        ? clusterTree[newkpi]
-        : getClusterByPath(clusterTree[newkpi], path);
-    if (newNode && newNode.children) {
-      setGroupedClusters(transformClusterData(newNode.children));
-    }
-    // Update clusterHistory to match the path
-    const newHistory = path.map((idx, i) => ({
-      path: path.slice(0, i + 1),
-      kpi: newkpi,
-      level: i + 1,
-      cluster: `Cluster ${idx + 1}`,
-    }));
-    dispatch(setClusterHistory(newHistory));
-    dispatch(setSelectedIndex(path.length - 1));
-  };
-
   const handleAnalyze = () => {
-    if (selectedClusterIndex !== null) {
-      const newPath = [...breadcrumbPath, selectedClusterIndex];
-      navigateToPath(newPath);
+    if (selectedClusterIndex !== null && selectedCell) {
+      // Truncate journey to the current selection, then add the new segment
+      const baseJourney =
+        currentSelectionIndex === -1
+          ? []
+          : journey.slice(0, currentSelectionIndex + 1);
+      const newStep = {
+        clusterIndex: selectedClusterIndex,
+        feature: selectedCell.feature,
+        value: selectedCell.value,
+      };
+      const newJourney = [...baseJourney, newStep];
+      setJourney(newJourney);
+      setCurrentSelectionIndex(newJourney.length - 1);
+      // Update table view
+      const pathIndices = newJourney.map((j) => j.clusterIndex);
+      setBreadcrumbPath(pathIndices);
+      const newNode = getClusterByPath(clusterTree[newkpi], pathIndices);
+      if (newNode && newNode.children) {
+        setGroupedClusters(transformClusterData(newNode.children));
+      }
+      setSelectedClusterIndex(null);
     }
   };
 
-  const handleHistoryClick = (historyItem, index) => {
-    setCurrentLevel(historyItem.level);
-    setCurrentPath(historyItem.path);
-    dispatch(setSelectedIndex(index));
-    setExtractedClusters(historyItem.extractedClusters);
-    processData(newkpi);
+  const handleNavigateToPath = (pathIndices) => {
+    // Find the index in the journey that matches the path
+    let selIdx = -1;
+    for (let i = 0; i < pathIndices.length; i++) {
+      if (!journey[i] || journey[i].clusterIndex !== pathIndices[i]) {
+        selIdx = -1;
+        break;
+      }
+      selIdx = i;
+    }
+    if (selIdx === -1 && pathIndices.length === 0) selIdx = -1; // root
+    setCurrentSelectionIndex(selIdx);
+    setBreadcrumbPath(pathIndices);
+    setSelectedClusterIndex(null);
+    // Update table view
+    const node =
+      pathIndices.length === 0
+        ? clusterTree[newkpi]
+        : getClusterByPath(clusterTree[newkpi], pathIndices);
+    if (node && node.children) {
+      setGroupedClusters(transformClusterData(node.children));
+    }
   };
 
   const handleDownload = async (clusterIndex) => {
@@ -262,7 +318,7 @@ const ClusteringComponent = () => {
         {
           project_id,
           level: currentLevel,
-          path: currentPath,
+          path: breadcrumbPath,
           cluster_index: clusterIndex,
         },
         {
@@ -301,25 +357,6 @@ const ClusteringComponent = () => {
     setSelectedClusterIndex(clusterIndex);
   };
 
-  const handleBreadcrumbClick = (level) => {
-    const newPath = breadcrumbPath.slice(0, level + 1);
-    setBreadcrumbPath(newPath);
-    setSelectedClusterIndex(null);
-
-    // Update groupedClusters for the new level
-    const newNode =
-      newPath.length === 0
-        ? clusterTree[newkpi]
-        : getClusterByPath(clusterTree[newkpi], newPath);
-    if (newNode && newNode.children) {
-      setGroupedClusters(transformClusterData(newNode.children));
-    }
-    // Update clusterHistory for Segment History
-    const newHistory = clusterHistory.slice(0, level + 1);
-    dispatch(setClusterHistory(newHistory));
-    dispatch(setSelectedIndex(level));
-  };
-
   const handleDownloadCSV = async () => {
     try {
       // Convert indexes to strings for backend compatibility
@@ -352,7 +389,7 @@ const ClusteringComponent = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError("Failed to download CSV");
+      setError("Failed to download CSV", err);
     }
   };
 
@@ -458,19 +495,37 @@ const ClusteringComponent = () => {
     <div className="flex h-[calc(100vh-80px)] overflow-hidden overflow-y-auto">
       <div className="w-64 bg-gray-100 border-r border-gray-200 overflow-y-auto">
         <ClusterHistorySection
-          selectedCell={selectedCell}
-          currentLevel={breadcrumbPath.length}
-          selectedIndex={breadcrumbPath.length - 1}
-          clusterHistory={clusterHistory}
-          onSegmentClick={navigateToPath}
+          journey={journey}
+          currentSelectionIndex={currentSelectionIndex}
+          clusterTree={clusterTree}
+          newkpi={newkpi}
+          onSegmentClick={(indices) => handleNavigateToPath(indices)}
         />
       </div>
       <div className="w-[calc(100%-16rem)] overflow-hidden overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() =>
+              navigate(`/${com_id}/projects/${project_id}/select-kpi`)
+            }
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <svg
+              className="h-6 w-6 text-gray-600 dark:text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
           <h1 className="text-xl font-semibold text-gray-700">
             Select the target KPI for analysis
           </h1>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 ml-auto">
             <button
               onClick={() =>
                 setViewMode(viewMode === "table" ? "tree" : "table")
@@ -498,38 +553,42 @@ const ClusteringComponent = () => {
           ))}
         </div>
 
+        {/* Breadcrumb Path */}
+        <div className="flex items-center gap-2 mb-4 text-sm font-medium">
+          <button
+            className={`text-blue-600 hover:underline ${
+              currentSelectionIndex === -1
+                ? "font-bold border-b-2 border-indigo-500"
+                : ""
+            }`}
+            onClick={() => handleNavigateToPath([])}
+          >
+            Root
+          </button>
+          {journey.map((step, i) => (
+            <span key={`bc-${i}`} className="flex items-center">
+              <ChevronRight className="inline-block w-4 h-4 mx-1 text-gray-400" />
+              <button
+                className={`text-blue-600 hover:underline ${
+                  i === currentSelectionIndex
+                    ? "font-bold border-b-2 border-indigo-500"
+                    : ""
+                }`}
+                onClick={() =>
+                  handleNavigateToPath(
+                    journey.slice(0, i + 1).map((j) => j.clusterIndex)
+                  )
+                }
+              >
+                Cluster {step.clusterIndex + 1}
+              </button>
+            </span>
+          ))}
+        </div>
+
         {viewMode === "table" ? (
           <div className="flex flex-row justify-start items-start gap-0 w-min mx-auto">
             <div className="flex flex-col justify-start mx-auto items-start p-1 w-fit">
-              <div className="flex items-center gap-2 mb-4 text-sm font-medium">
-                <span className="text-gray-500">KPI:</span>
-                <span className="text-indigo-700 font-bold mr-2">{newkpi}</span>
-                <button
-                  className={`text-blue-600 hover:underline ${
-                    breadcrumbPath.length === 0 ? "font-bold" : ""
-                  }`}
-                  onClick={() => {
-                    navigateToPath([]);
-                  }}
-                >
-                  Root
-                </button>
-                {breadcrumbPath.map((idx, i) => (
-                  <span key={`bc-${i}`} className="flex items-center">
-                    <ChevronRight className="inline-block w-4 h-4 mx-1 text-gray-400" />
-                    <button
-                      className={`text-blue-600 hover:underline ${
-                        i === breadcrumbPath.length - 1 ? "font-bold" : ""
-                      }`}
-                      onClick={() =>
-                        navigateToPath(breadcrumbPath.slice(0, i + 1))
-                      }
-                    >
-                      Cluster {idx + 1}
-                    </button>
-                  </span>
-                ))}
-              </div>
               <div className="w-full overflow-x-auto">
                 <div className="w-[calc(100vw-18rem)] overflow-x-auto border-b border-gray-200 shadow sm:rounded-lg">
                   {loading && (
@@ -736,7 +795,7 @@ const ClusteringComponent = () => {
             activeKPI={newkpi}
             onClusterSelect={(cluster, path, level) => {
               setCurrentLevel(level);
-              setCurrentPath(path);
+              setJourney(path);
               if (cluster.children && cluster.children.length > 0) {
                 setExtractedClusters(cluster.children);
                 const transformedData = transformClusterData(cluster.children);
@@ -750,7 +809,7 @@ const ClusteringComponent = () => {
           <WorkbenchModal
             categorical_columns={[]}
             currentLevel={currentLevel}
-            currentPath={currentPath}
+            currentPath={journey}
             activeKPI={newkpi}
             showModal={showModal}
             setShowModal={setShowModal}
@@ -762,7 +821,7 @@ const ClusteringComponent = () => {
             setIsOpen={setIsOpen}
             kpi={newkpi}
             clusterNo={selectedCluster}
-            path={currentPath}
+            path={journey}
           />
         )}
         {isOpen1 && (

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Upload,
@@ -17,7 +17,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
-import { updateProject, createProject } from "../redux/projectsSlice";
+import { updateProject, restoreProjectState } from "../redux/projectsSlice";
 import Select from "react-select";
 import axiosInstance from "../utils/axiosInstance";
 import { getAuthState } from "../utils/auth";
@@ -91,7 +91,10 @@ ErrorBoundary.propTypes = {
 };
 
 function ConfigurationContent() {
-  const [activeTab, setActiveTab] = useState("upload");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(
+    location.state?.activeTab === "settings" ? "settings" : "upload"
+  );
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { project_id } = useParams();
@@ -128,87 +131,147 @@ function ConfigurationContent() {
     )
   );
 
+  // Debug log for project and data_uploaded
+  console.log("DEBUG: project:", project);
+  console.log("DEBUG: project?.data_uploaded:", project?.data_uploaded);
+
   const storedDroppedColumns = project?.droppedColumns;
   const kpiList = project?.kpiList;
 
   // Add toast state
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
+  // Compute dropped column names for filtering (make available to all dropdowns)
+  const droppedNames = (project?.droppedColumns || []).map((col) =>
+    typeof col === "string" ? col : col.name
+  );
+
+  // Memoized fetchAndRestoreProject for reuse
+  const fetchAndRestoreProject = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await axiosInstance.get(
+        `/${com_id}/projects/${project_id}`
+      );
+      if (response.data) {
+        dispatch(
+          restoreProjectState({
+            projectId: project_id,
+            project_id: project_id,
+            columns: (response.data.total_columns || []).map((name, idx) => ({
+              id: idx + 1,
+              name,
+              type: "string",
+              description: name,
+            })),
+            importantColumnNames: response.data.important_columns || [],
+            kpiList: response.data.kpi_columns || [],
+            droppedColumns: response.data.dropped_columns || [],
+            uploadedFileData: response.data.uploadedFileData || [],
+            selectedKpi: response.data.selectedKpi || null,
+            data_uploaded: response.data.data_uploaded,
+            clusters: response.data.clusters || null,
+            currentStep: response.data.clusters
+              ? "clustering"
+              : response.data.data_uploaded
+              ? "analysis"
+              : "configuration",
+            analysisComplete: !!response.data.clusters,
+          })
+        );
+      }
+    } catch (error) {
+      setError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [com_id, project_id, dispatch]);
+
   // Combined useEffect for initialization and reUpload check
   useEffect(() => {
-    try {
-      console.log("Configuration component mounted");
-      console.log("Company ID:", com_id);
-      console.log("Project ID:", project_id);
-      console.log("Project data:", project);
-
-      if (!com_id) {
-        setError("Company ID is not set. Please log in again.");
-        return;
-      }
-
-      // Set loading state
-      if (!project && project_id) {
-        setIsLoading(true);
-        // Try to fetch project data if not in store
-        const fetchProject = async () => {
-          try {
-            const response = await axiosInstance.get(
-              `/${com_id}/projects/${project_id}`
-            );
-            if (response.data) {
-              dispatch(
-                createProject({
-                  projectId: project_id,
-                  project_id: project_id,
-                  columns: response.data.columns || [],
-                  importantColumnNames:
-                    response.data.importantColumnNames || [],
-                  kpiList: response.data.kpiList || [],
-                  droppedColumns: response.data.droppedColumns || [],
-                  uploadedFileData: response.data.uploadedFileData || [],
-                  selectedKpi: response.data.selectedKpi || null,
-                })
-              );
-            }
-          } catch (error) {
-            console.error("Error fetching project:", error);
-            setError(error);
-          } finally {
-            setIsLoading(false);
-          }
-        };
-        fetchProject();
-      } else {
-        setIsLoading(false);
-      }
-
-      // Check for reUpload condition
-      if (
-        uploadedFileData?.length > 0 &&
-        storedDroppedColumns?.length > 0 &&
-        importantColumnNames?.length > 0 &&
-        kpiList?.length > 0
-      ) {
-        setReUpload(true);
-        setValidated(true);
-      }
-    } catch (err) {
-      console.error("Error in Configuration component:", err);
-      setError(err);
+    if (com_id && project_id) {
+      fetchAndRestoreProject();
     }
-  }, [
-    com_id,
-    project_id,
-    project,
-    uploadedFileData,
-    storedDroppedColumns,
-    importantColumnNames,
-    kpiList,
-    dispatch,
-  ]);
+  }, [com_id, project_id, fetchAndRestoreProject]);
+
+  // Pre-select KPI and Important columns for existing projects
+  useEffect(() => {
+    if (project && columns.length > 0 && activeTab === "settings") {
+      // Get the names of dropped columns
+      const droppedNames = (project.droppedColumns || []).map((col) =>
+        typeof col === "string" ? col : col.name
+      );
+
+      // Only consider columns that are not dropped
+      const availableColumns = columns.filter(
+        (col) => !droppedNames.includes(col.name)
+      );
+
+      // Pre-select KPI columns
+      if (project.kpiList && project.kpiList.length > 0) {
+        const kpiIds = availableColumns
+          .filter((col) =>
+            project.kpiList.some(
+              (kpi) =>
+                kpi.trim().toLowerCase() === col.name.trim().toLowerCase()
+            )
+          )
+          .map((col) => col.id);
+        setSelectedKpi(kpiIds);
+        console.log("DEBUG: Setting KPI columns:", kpiIds);
+      }
+
+      // Pre-select Important columns
+      if (
+        project.importantColumnNames &&
+        project.importantColumnNames.length > 0
+      ) {
+        const importantIds = availableColumns
+          .filter((col) =>
+            project.importantColumnNames.some(
+              (imp) =>
+                imp.trim().toLowerCase() === col.name.trim().toLowerCase()
+            )
+          )
+          .map((col) => col.id);
+        setSelectedImportant(importantIds);
+        console.log("DEBUG: Setting Important columns:", importantIds);
+      }
+    }
+  }, [project, columns, activeTab]);
+
+  // Update selected KPI and important columns when columns are dropped
+  useEffect(() => {
+    if (project?.droppedColumns?.length > 0) {
+      // Get the names of dropped columns
+      const droppedNames = project.droppedColumns.map((col) =>
+        typeof col === "string" ? col : col.name
+      );
+      // Remove dropped columns from selected KPI
+      setSelectedKpi((prev) =>
+        prev.filter((id) => {
+          const col = columns.find((c) => c.id === id);
+          return col && !droppedNames.includes(col.name);
+        })
+      );
+      // Remove dropped columns from selected Important
+      setSelectedImportant((prev) =>
+        prev.filter((id) => {
+          const col = columns.find((c) => c.id === id);
+          return col && !droppedNames.includes(col.name);
+        })
+      );
+    }
+  }, [project?.droppedColumns, columns]);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Sync local columns state with Redux project.columns if available
+  useEffect(() => {
+    if (project && project.columns && project.columns.length > 0) {
+      setColumns(project.columns);
+    }
+  }, [project]);
 
   if (error) {
     return (
@@ -360,6 +423,9 @@ function ConfigurationContent() {
       // Reset chatbot state
       setIsChatOpen(false);
       localStorage.removeItem(`chat_messages_${project_id}`);
+
+      // After backend update, re-fetch project state
+      await fetchAndRestoreProject();
     } catch (error) {
       console.error("Error uploading file:", error);
       setError(
@@ -477,6 +543,8 @@ function ConfigurationContent() {
       }
     } finally {
       setDroppingColumns(false);
+      // After backend update, re-fetch project state
+      await fetchAndRestoreProject();
     }
   };
 
@@ -525,6 +593,7 @@ function ConfigurationContent() {
       }
 
       // Navigate to the next step
+      await fetchAndRestoreProject();
       navigate(`/${com_id}/projects/${project_id}/select-kpi`, {
         state: {
           importantColumns,
@@ -539,6 +608,7 @@ function ConfigurationContent() {
       ) {
         // If KPI columns are already set, proceed with navigation
         if (project?.kpiList?.length > 0) {
+          await fetchAndRestoreProject();
           navigate(`/${com_id}/projects/${project_id}/select-kpi`, {
             state: {
               importantColumns,
@@ -812,41 +882,57 @@ function ConfigurationContent() {
 
                   {/* Drag & Drop Area */}
                   {!file ? (
-                    <div
-                      className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                        isDragging
-                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20"
-                          : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                      }`}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".csv,.xls,.xlsx"
-                        className="hidden"
-                      />
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="mb-4 p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
-                          <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                    project?.data_uploaded ? (
+                      <div className="border rounded-lg p-6 flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20">
+                        <div className="flex items-center">
+                          <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg mr-4">
+                            <FileText className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-medium text-gray-900 dark:text-white">
+                              {project.uploadedFileData ||
+                                "File already uploaded"}
+                            </h3>
+                          </div>
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                          {isDragging
-                            ? "Drop your file here"
-                            : "Drag & Drop your file here"}
-                        </h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                          or click to browse from your computer
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          Supported formats: CSV, Excel (.xls, .xlsx)
-                        </p>
                       </div>
-                    </div>
+                    ) : (
+                      <div
+                        className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                          isDragging
+                            ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20"
+                            : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileChange}
+                          accept=".csv,.xls,.xlsx"
+                          className="hidden"
+                        />
+                        <div className="flex flex-col items-center justify-center">
+                          <div className="mb-4 p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                            <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                            {isDragging
+                              ? "Drop your file here"
+                              : "Drag & Drop your file here"}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                            or click to browse from your computer
+                          </p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500">
+                            Supported formats: CSV, Excel (.xls, .xlsx)
+                          </p>
+                        </div>
+                      </div>
+                    )
                   ) : (
                     <div className="border rounded-lg p-6">
                       <div className="flex items-center justify-between">
@@ -912,9 +998,9 @@ function ConfigurationContent() {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setIsChatOpen(true)}
-                        disabled={!validated}
+                        disabled={!(validated || project?.data_uploaded)}
                         className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                          validated
+                          validated || project?.data_uploaded
                             ? "bg-blue-600 text-white hover:bg-blue-700"
                             : "bg-gray-300 text-gray-500 cursor-not-allowed"
                         }`}
@@ -926,9 +1012,9 @@ function ConfigurationContent() {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setActiveTab("settings")}
-                        disabled={!validated}
+                        disabled={!(validated || project?.data_uploaded)}
                         className={`px-6 py-2 rounded-lg transition-colors ${
-                          validated
+                          validated || project?.data_uploaded
                             ? "bg-green-600 text-white hover:bg-green-700"
                             : "bg-gray-300 text-gray-500 cursor-not-allowed"
                         }`}
@@ -990,10 +1076,9 @@ function ConfigurationContent() {
                           isMulti
                           menuCloseOnSelect={false}
                           closeMenuOnSelect={false}
-                          options={columns.map((col) => ({
-                            value: col.id,
-                            label: col.name,
-                          }))}
+                          options={columns
+                            .filter((col) => !droppedNames.includes(col.name))
+                            .map((col) => ({ value: col.id, label: col.name }))}
                           value={droppedColumns.map((id) => ({
                             value: id,
                             label: columns.find((col) => col.id === id)?.name,
@@ -1108,7 +1193,7 @@ function ConfigurationContent() {
                           menuCloseOnSelect={false}
                           closeMenuOnSelect={false}
                           options={columns
-                            .filter((col) => !droppedColumns.includes(col.id))
+                            .filter((col) => !droppedNames.includes(col.name))
                             .map((col) => ({ value: col.id, label: col.name }))}
                           value={selectedKpi.map((id) => ({
                             value: id,
@@ -1201,7 +1286,7 @@ function ConfigurationContent() {
                           options={columns
                             .filter(
                               (col) =>
-                                !droppedColumns.includes(col.id) &&
+                                !droppedNames.includes(col.name) &&
                                 !selectedKpi.includes(col.id)
                             )
                             .map((col) => ({ value: col.id, label: col.name }))}

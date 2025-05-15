@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,7 +19,7 @@ import {
 } from "lucide-react";
 import CreateProjModal from "../Components/CreateProjModal";
 import Loader from "../Components/Loader";
-import { createProject } from "../redux/projectsSlice";
+import { createProject, restoreProjectState } from "../redux/projectsSlice";
 import axiosInstance from "../utils/axiosInstance";
 import { getAuthState } from "../utils/auth";
 
@@ -32,7 +31,6 @@ const Home = () => {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", description: "" });
-  const baseUrl = import.meta.env.VITE_BASE_URL;
   const { com_id } = getAuthState();
   const projectsInStore = useSelector((state) => state.projects);
   const [searchTerm, setSearchTerm] = useState("");
@@ -86,6 +84,7 @@ const Home = () => {
         name: project.name,
         description: project.description,
         com_id: com_id,
+        data_uploaded: project.data_uploaded,
       }));
 
       // Update Redux store only for new projects
@@ -95,19 +94,49 @@ const Home = () => {
         );
 
         if (!projectExists) {
-          dispatch(
-            createProject({
-              projectId: project.project_id,
-              name: project.name,
-              description: project.description,
-              columns: [],
-              importantColumnNames: [],
-              kpiList: [],
-              droppedColumns: [],
-              uploadedFileData: [],
-              selectedKpi: null,
-            })
-          );
+          // Fetch complete project data for new projects
+          const fetchProjectDetails = async () => {
+            try {
+              const projectResponse = await axiosInstance.get(
+                `/${com_id}/projects/${project.project_id}`
+              );
+              if (projectResponse.data) {
+                dispatch(
+                  restoreProjectState({
+                    projectId: project.project_id,
+                    project_id: project.project_id,
+                    columns: (projectResponse.data.total_columns || []).map(
+                      (name, idx) => ({
+                        id: idx + 1,
+                        name,
+                        type: "string",
+                        description: name,
+                      })
+                    ),
+                    importantColumnNames:
+                      projectResponse.data.important_columns || [],
+                    kpiList: projectResponse.data.kpi_columns || [],
+                    droppedColumns: projectResponse.data.dropped_columns || [],
+                    uploadedFileData:
+                      projectResponse.data.uploadedFileData || [],
+                    selectedKpi: projectResponse.data.selectedKpi || null,
+                    data_uploaded: projectResponse.data.data_uploaded,
+                    clusters: projectResponse.data.clusters || null,
+                    currentStep: projectResponse.data.data_uploaded
+                      ? "analysis"
+                      : "configuration",
+                    analysisComplete: !!projectResponse.data.clusters,
+                  })
+                );
+              }
+            } catch (error) {
+              console.error(
+                `Error fetching details for project ${project.project_id}:`,
+                error
+              );
+            }
+          };
+          fetchProjectDetails();
         }
       });
 
@@ -150,6 +179,7 @@ const Home = () => {
           droppedColumns: [],
           uploadedFileData: [],
           selectedKpi: null,
+          data_uploaded: false,
         })
       );
 
@@ -175,34 +205,6 @@ const Home = () => {
     }
   };
 
-  const handleProjectStatus = async (projectId) => {
-    try {
-      if (!projectId) {
-        throw new Error("Invalid project ID");
-      }
-
-      const response = await   axiosInstance.get(`/${com_id}/projects/${projectId}`);
-      if (!response.data) {
-        throw new Error("Invalid response from server");
-      }
-
-      return response;
-    } catch (error) {
-      if (error.response) {
-        if (error.response.status === 404) {
-          throw new Error("Project not found or data not available");
-        } else {
-          throw new Error(
-            `Server error: ${error.response.data?.message || "Unknown error"}`
-          );
-        }
-      }
-      throw new Error(
-        "Failed to fetch project status: " + (error.message || "Unknown error")
-      );
-    }
-  };
-
   const handleProjectClick = async (projectId) => {
     try {
       if (!projectId) {
@@ -213,60 +215,39 @@ const Home = () => {
       setError(null);
       localStorage.setItem("project_id", projectId);
 
-      let status;
-      try {
-        status = await handleProjectStatus(projectId);
-      } catch (statusError) {
-        console.warn(
-          "Status check failed, redirecting to upload:",
-          statusError
+      // Always fetch full project details before navigation
+      const projectResponse = await axiosInstance.get(
+        `/${com_id}/projects/${projectId}`
+      );
+      if (projectResponse.data) {
+        dispatch(
+          restoreProjectState({
+            projectId: projectId,
+            project_id: projectId,
+            columns: (projectResponse.data.total_columns || []).map(
+              (name, idx) => ({
+                id: idx + 1,
+                name,
+                type: "string",
+                description: name,
+              })
+            ),
+            importantColumnNames: projectResponse.data.important_columns || [],
+            kpiList: projectResponse.data.kpi_columns || [],
+            droppedColumns: projectResponse.data.dropped_columns || [],
+            uploadedFileData: projectResponse.data.uploadedFileData || [],
+            selectedKpi: projectResponse.data.selectedKpi || null,
+            data_uploaded: projectResponse.data.data_uploaded,
+            clusters: projectResponse.data.clusters || null,
+            currentStep: projectResponse.data.data_uploaded
+              ? "analysis"
+              : "configuration",
+            analysisComplete: !!projectResponse.data.clusters,
+          })
         );
-        navigate(`/${com_id}/projects/${projectId}/configuration`);
-        setLoading(false);
-        return;
       }
 
-      if (!status.data.data_uploaded) {
-        navigate(`/${com_id}/projects/${projectId}/configuration`);
-        setLoading(false);
-        return;
-      }
-
-      if (status.data.feature_ranking_completed) {
-        navigate(`/${com_id}/projects/${projectId}/clustered-data`, {
-          state: {
-            kpiList: status.data.kpi_list,
-            importantColumnNames: status.data.important_features,
-            activeKPI: status.data.kpi,
-            rankingStatus: "SUCCESS",
-          },
-        });
-      } else {
-        try {
-          const rankingResponse = await axios.post(
-            `${baseUrl}/projects/${projectId}/feature-ranking`,
-            {
-              project_id: projectId,
-              kpi: status.data.kpi,
-              important_features: status.data.important_features,
-              kpi_list: status.data.kpi_list,
-            }
-          );
-
-          navigate(`/${com_id}/projects/${projectId}/clustered-data`, {
-            state: {
-              kpiList: status.data.kpi_list,
-              importantColumnNames: status.data.important_features,
-              activeKPI: status.data.kpi,
-              rankingStatus: false,
-              task_id: rankingResponse.data.task_id,
-            },
-          });
-        } catch (rankingError) {
-          console.error("Feature ranking failed:", rankingError);
-          throw new Error("Failed to start feature ranking process");
-        }
-      }
+      navigate(`/${com_id}/projects/${projectId}/configuration`);
     } catch (error) {
       console.error("Error navigating to project:", error);
       setError(error.message || "Failed to open project. Please try again.");

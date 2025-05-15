@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronLeft, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { setClusterHistory } from "../redux/clusterSlice";
-import { updateProject } from "../redux/projectsSlice";
+import { updateProject, restoreProjectState } from "../redux/projectsSlice";
+import axiosInstance from "../utils/axiosInstance";
 // import { featureRanking } from "../utils/apiUtils";
 
 const SelectKPI = () => {
@@ -14,9 +15,78 @@ const SelectKPI = () => {
   const navigate = useNavigate();
   const { project_id, com_id } = useParams();
   const dispatch = useDispatch();
+  const project = useSelector((state) =>
+    state.projects.find(
+      (project) =>
+        project.projectId === project_id || project.project_id === project_id
+    )
+  );
 
-  // Get the columns from location state
-  const { importantColumns, kpiColumns } = location.state || {};
+  // Fetch and restore project state on mount
+  useEffect(() => {
+    const fetchAndRestoreProject = async () => {
+      try {
+        const response = await axiosInstance.get(
+          `/${com_id}/projects/${project_id}`
+        );
+        if (response.data) {
+          dispatch(
+            restoreProjectState({
+              projectId: project_id,
+              project_id: project_id,
+              columns: (response.data.total_columns || []).map((name, idx) => ({
+                id: idx + 1,
+                name,
+                type: "string",
+                description: name,
+              })),
+              importantColumnNames: response.data.important_columns || [],
+              kpiList: response.data.kpi_columns || [],
+              droppedColumns: response.data.dropped_columns || [],
+              uploadedFileData: response.data.uploadedFileData || [],
+              selectedKpi: response.data.selectedKpi || null,
+              data_uploaded: response.data.data_uploaded,
+              clusters: response.data.clusters || null,
+              currentStep: response.data.clusters
+                ? "clustering"
+                : response.data.data_uploaded
+                ? "analysis"
+                : "configuration",
+              analysisComplete: !!response.data.clusters,
+            })
+          );
+        }
+      } catch (error) {
+        // Optionally handle error
+      }
+    };
+    if (com_id && project_id) {
+      fetchAndRestoreProject();
+    }
+  }, [com_id, project_id, dispatch]);
+
+  // Use Redux state for columns if available
+  const importantColumns =
+    project?.importantColumnNames
+      ?.map((name) => project.columns?.find((col) => col.name === name))
+      ?.filter(Boolean) ||
+    location.state?.importantColumns ||
+    [];
+  // Get dropped column names
+  const droppedNames = (project?.droppedColumns || []).map((col) =>
+    typeof col === "string" ? col : col.name
+  );
+  // Only show KPI columns that are not dropped
+  const kpiColumns =
+    project?.kpiList
+      ?.map((name) =>
+        project.columns?.find(
+          (col) => col.name === name && !droppedNames.includes(col.name)
+        )
+      )
+      ?.filter(Boolean) ||
+    location.state?.kpiColumns ||
+    [];
 
   // State for selected KPI
   const [selectedKpi, setSelectedKpi] = useState(null);
@@ -24,6 +94,34 @@ const SelectKPI = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
+
+  // Pre-select last selected KPI for existing projects
+  useEffect(() => {
+    if (
+      project &&
+      project.columns &&
+      project.kpiList &&
+      project.kpiList.length > 0
+    ) {
+      // Get dropped column names
+      const droppedNames = (project.droppedColumns || []).map((col) =>
+        typeof col === "string" ? col : col.name
+      );
+      // Only consider columns that are not dropped
+      const availableColumns = project.columns.filter(
+        (col) => !droppedNames.includes(col.name)
+      );
+      // Pre-select KPI columns from persisted state
+      const kpiIds = availableColumns.filter((col) =>
+        project.kpiList.some(
+          (kpi) => kpi.trim().toLowerCase() === col.name.trim().toLowerCase()
+        )
+      );
+      // If you want to allow multi-select, use setSelectedKpi(kpiIds)
+      // If you want to allow only one, use setSelectedKpi(kpiIds[0] || null)
+      setSelectedKpi(kpiIds[0] || null);
+    }
+  }, [project]);
 
   // Debug logging
   console.log("KPI Columns:", kpiColumns);
@@ -89,7 +187,11 @@ const SelectKPI = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() =>
+              navigate(`/${com_id}/projects/${project_id}/configuration`, {
+                state: { activeTab: "settings" },
+              })
+            }
             className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <ChevronLeft className="h-6 w-6 text-gray-600 dark:text-gray-400" />

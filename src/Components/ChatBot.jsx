@@ -95,12 +95,18 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
         setMessages(response.data.chat_history);
       }
     } catch (error) {
-      console.error("Error fetching chat history:", error);
-      setError(
-        error.response?.data?.detail ||
-          error.message ||
-          "Failed to load chat history. Please try again."
-      );
+      if (error.response && error.response.status === 404) {
+        // No chat history yet, not an error
+        setMessages([]);
+        setError(null);
+      } else {
+        console.error("Error fetching chat history:", error);
+        setError(
+          error.response?.data?.detail ||
+            error.message ||
+            "Failed to load chat history. Please try again."
+        );
+      }
     }
   };
 
