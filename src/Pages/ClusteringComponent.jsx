@@ -341,7 +341,11 @@ const ClusteringComponent = () => {
   };
 
   const filterImportantFeatures = (features) => {
-    return features.filter((feature) => importantColumnNames.includes(feature));
+    // Filter features to include both important columns and KPI columns
+    return features.filter(
+      (feature) =>
+        importantColumnNames.includes(feature) || kpiList.includes(feature)
+    );
   };
 
   const getClusterByPath = (tree, path) => {
