@@ -85,6 +85,7 @@ const Home = () => {
         description: project.description,
         com_id: com_id,
         data_uploaded: project.data_uploaded,
+        created_at: project.created_at,
       }));
 
       // Update Redux store only for new projects
@@ -471,9 +472,16 @@ const Home = () => {
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                       Created:{" "}
-                      {new Date(
-                        project.createdAt || Date.now()
-                      ).toLocaleDateString()}
+                      {project.created_at && project.created_at.trim() !== ""
+                        ? new Date(project.created_at).toLocaleDateString(
+                            undefined,
+                            {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            }
+                          )
+                        : "N/A"}
                     </span>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
                       Active
