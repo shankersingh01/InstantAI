@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import PropTypes from "prop-types";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FiSend,
@@ -231,6 +232,36 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
       return content.includes("```") || content.includes("`");
     };
 
+    const isBase64Image = (content) => {
+      try {
+        const json = JSON.parse(content);
+        return (
+          json.type === "image" &&
+          json.value &&
+          json.value.startsWith("data:image")
+        );
+      } catch {
+        return false;
+      }
+    };
+
+    const isRawBase64Image = (content) => {
+      return (
+        typeof content === "string" &&
+        content.length > 1000 &&
+        /^[A-Za-z0-9+/=]+$/.test(content.slice(0, 1000))
+      );
+    };
+
+    const isDataFrame = (content) => {
+      try {
+        const json = JSON.parse(content);
+        return json.type === "dataframe" && Array.isArray(json.value);
+      } catch {
+        return false;
+      }
+    };
+
     if (message.type === "error") {
       return (
         <div className="flex items-center space-x-2">
@@ -254,10 +285,59 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
             <FaRobot className="text-blue-600 text-xl" />
           </div>
           <div className="flex-1">
-            {isCodeBlock(message.content) ? (
+            {isBase64Image(message.content) ? (
+              <div className="mt-2">
+                <img
+                  src={JSON.parse(message.content).value}
+                  alt="Generated visualization"
+                  className="max-w-full rounded-lg shadow-md"
+                />
+              </div>
+            ) : isRawBase64Image(message.content) ? (
+              <div className="mt-2">
+                <img
+                  src={`data:image/png;base64,${message.content}`}
+                  alt="Generated visualization"
+                  className="max-w-full rounded-lg shadow-md"
+                />
+              </div>
+            ) : isDataFrame(message.content) ? (
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {Object.keys(
+                        JSON.parse(message.content).value[0] || {}
+                      ).map((header) => (
+                        <th
+                          key={header}
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {JSON.parse(message.content).value.map((row, idx) => (
+                      <tr key={idx}>
+                        {Object.values(row).map((cell, cellIdx) => (
+                          <td
+                            key={cellIdx}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          >
+                            {cell === null ? "N/A" : cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : isCodeBlock(message.content) ? (
               <ReactMarkdown
                 components={{
-                  code({ node, inline, className, children, ...props }) {
+                  code({ inline, className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || "");
                     return !inline && match ? (
                       <SyntaxHighlighter
@@ -427,6 +507,11 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
       </motion.div>
     </AnimatePresence>
   );
+};
+
+ChatBot.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
 };
 
 export default ChatBot;
