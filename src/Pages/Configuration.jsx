@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Upload,
@@ -22,7 +22,6 @@ import Select from "react-select";
 import axiosInstance from "../utils/axiosInstance";
 import { getAuthState } from "../utils/auth";
 import ChatBot from "../Components/ChatBot";
-import { FaRobot } from "react-icons/fa";
 
 // Add DUMMY_COLUMNS definition at the top of the file
 const DUMMY_COLUMNS = [
@@ -91,10 +90,16 @@ ErrorBoundary.propTypes = {
 };
 
 function ConfigurationContent() {
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState(
-    location.state?.activeTab === "settings" ? "settings" : "upload"
-  );
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem("config_active_tab") || "upload";
+  });
+
+  // Move handleTabChange here so it's defined before any useEffect that uses it
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    localStorage.setItem("config_active_tab", tab);
+  };
+
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { project_id } = useParams();
@@ -145,6 +150,15 @@ function ConfigurationContent() {
   const droppedNames = (project?.droppedColumns || []).map((col) =>
     typeof col === "string" ? col : col.name
   );
+
+  // Add new state for additional files
+  const [domainFiles, setDomainFiles] = useState([]);
+  const [brandFiles, setBrandFiles] = useState([]);
+  const [otherFiles, setOtherFiles] = useState([]);
+  const [additionalFilesUploading, setAdditionalFilesUploading] =
+    useState(false);
+  const [additionalFilesError, setAdditionalFilesError] = useState("");
+  const [additionalFilesSuccess, setAdditionalFilesSuccess] = useState("");
 
   // Memoized fetchAndRestoreProject for reuse
   const fetchAndRestoreProject = useCallback(async () => {
@@ -270,6 +284,49 @@ function ConfigurationContent() {
   useEffect(() => {
     if (project && project.columns && project.columns.length > 0) {
       setColumns(project.columns);
+    }
+  }, [project]);
+
+  // Merge column/droppedColumns state restoration logic and handle tab validity
+  useEffect(() => {
+    if (project && project.columns && project.droppedColumns) {
+      // Only show columns that are not dropped
+      setColumns(
+        project.columns.filter(
+          (col) => !project.droppedColumns.includes(col.name)
+        )
+      );
+      setDroppedColumns(project.droppedColumns);
+      // Restore selectedKpi and selectedImportant from Redux if needed
+      if (project.kpiList) {
+        setSelectedKpi(
+          project.kpiList
+            .map(
+              (kpiName) =>
+                project.columns.find((col) => col.name === kpiName)?.id
+            )
+            .filter(Boolean)
+        );
+      }
+      if (project.importantColumnNames) {
+        setSelectedImportant(
+          project.importantColumnNames
+            .map(
+              (impName) =>
+                project.columns.find((col) => col.name === impName)?.id
+            )
+            .filter(Boolean)
+        );
+      }
+      // Validate active tab for current project state
+      let validTabs = ["upload"];
+      if (project.data_uploaded || validated || reUpload) {
+        validTabs.push("additional-files");
+        validTabs.push("settings");
+      }
+      if (!validTabs.includes(activeTab)) {
+        handleTabChange(validTabs[0]);
+      }
     }
   }, [project]);
 
@@ -439,15 +496,13 @@ function ConfigurationContent() {
   };
 
   const handleDropColumns = async () => {
-    if (droppedColumns.length === 0) {
+    if (!droppedColumns || droppedColumns.length === 0) {
       setColumnError("Please select at least one column to drop");
       return;
     }
-
     setDroppingColumns(true);
     setColumnError("");
     setColumnSuccess("");
-
     try {
       const columnNames = droppedColumns
         .map((colId) => {
@@ -469,13 +524,11 @@ function ConfigurationContent() {
         const newColumnsToDrop = columnNames.filter(
           (name) => !alreadyDropped.includes(name)
         );
-
         if (newColumnsToDrop.length === 0) {
           setDroppingColumns(false);
+          setDroppedColumns([]); // Clear selection
           return;
         }
-
-        // Only drop the new columns
         const response = await axiosInstance.post(
           `/projects/${project_id}/drop_columns`,
           {
@@ -483,27 +536,14 @@ function ConfigurationContent() {
             columns: newColumnsToDrop,
           }
         );
-
         if (response.status === 200) {
           setColumnSuccess(
             `Successfully dropped columns: ${newColumnsToDrop.join(", ")}`
           );
-          setColumns(
-            columns.filter((col) => !newColumnsToDrop.includes(col.name))
-          );
-          dispatch(
-            updateProject({
-              projectId: project_id,
-              droppedColumns: [...storedDroppedColumns, ...newColumnsToDrop],
-              columns: columns.filter(
-                (col) => !newColumnsToDrop.includes(col.name)
-              ),
-            })
-          );
-          setDroppedColumns([]);
+          setDroppedColumns([]); // Clear selection
+          await fetchAndRestoreProject(); // Sync with backend
         }
       } else {
-        // No columns were already dropped, proceed with normal drop
         const response = await axiosInstance.post(
           `/projects/${project_id}/drop_columns`,
           {
@@ -511,18 +551,10 @@ function ConfigurationContent() {
             columns: columnNames,
           }
         );
-
         if (response.status === 200) {
           setColumnSuccess("Columns dropped successfully!");
-          setColumns(columns.filter((col) => !columnNames.includes(col.name)));
-          dispatch(
-            updateProject({
-              projectId: project_id,
-              droppedColumns: columnNames,
-              columns: columns.filter((col) => !columnNames.includes(col.name)),
-            })
-          );
-          setDroppedColumns([]);
+          setDroppedColumns([]); // Clear selection
+          await fetchAndRestoreProject(); // Sync with backend
         } else {
           setColumnError("Failed to drop columns: " + response.data.message);
         }
@@ -534,7 +566,7 @@ function ConfigurationContent() {
         error.response?.data?.detail === "Project not found or no change made."
       ) {
         setColumnSuccess("Columns were already dropped.");
-        setDroppedColumns([]);
+        setDroppedColumns([]); // Clear selection
       } else {
         setColumnError(
           error.response?.data?.message ||
@@ -543,8 +575,6 @@ function ConfigurationContent() {
       }
     } finally {
       setDroppingColumns(false);
-      // After backend update, re-fetch project state
-      await fetchAndRestoreProject();
     }
   };
 
@@ -648,6 +678,64 @@ function ConfigurationContent() {
       opacity: 1,
       transition: { type: "spring", stiffness: 300, damping: 24 },
     },
+  };
+
+  // Add new function to handle additional files upload
+  const handleAdditionalFilesUpload = async () => {
+    setAdditionalFilesUploading(true);
+    setAdditionalFilesError("");
+    setAdditionalFilesSuccess("");
+    try {
+      // Upload domain files
+      if (domainFiles.length > 0) {
+        const domainFormData = new FormData();
+        domainFiles.forEach((file) => domainFormData.append("files", file));
+        await axiosInstance.post(
+          `/upload/domain_files/${project_id}`,
+          domainFormData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+      }
+      // Upload brand files
+      if (brandFiles.length > 0) {
+        const brandFormData = new FormData();
+        brandFiles.forEach((file) => brandFormData.append("files", file));
+        await axiosInstance.post(
+          `/upload/brand_files/${project_id}`,
+          brandFormData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+      }
+      // Upload other files
+      if (otherFiles.length > 0) {
+        const otherFormData = new FormData();
+        otherFiles.forEach((file) => otherFormData.append("files", file));
+        await axiosInstance.post(
+          `/upload/other_files/${project_id}`,
+          otherFormData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+      }
+      setAdditionalFilesSuccess("Files uploaded successfully!");
+      setDomainFiles([]);
+      setBrandFiles([]);
+      setOtherFiles([]);
+      // Optionally, trigger a refresh or show a toast/modal
+    } catch (error) {
+      setAdditionalFilesError(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to upload files"
+      );
+    } finally {
+      setAdditionalFilesUploading(false);
+    }
   };
 
   return (
@@ -811,7 +899,7 @@ function ConfigurationContent() {
             <div className="border-b border-gray-200 dark:border-gray-700">
               <nav className="flex">
                 <button
-                  onClick={() => setActiveTab("upload")}
+                  onClick={() => handleTabChange("upload")}
                   className={`px-6 py-4 text-sm font-medium flex items-center gap-2 ${
                     activeTab === "upload"
                       ? "border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400"
@@ -822,7 +910,23 @@ function ConfigurationContent() {
                   Upload Data
                 </button>
                 <button
-                  onClick={() => setActiveTab("settings")}
+                  onClick={() => handleTabChange("additional-files")}
+                  disabled={!validated && !reUpload}
+                  className={`px-6 py-4 text-sm font-medium flex items-center gap-2 ${
+                    activeTab === "additional-files"
+                      ? "border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400"
+                      : "border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
+                  } ${
+                    !validated && !reUpload
+                      ? "opacity-50 cursor-not-allowed"
+                      : ""
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  Additional Files
+                </button>
+                <button
+                  onClick={() => handleTabChange("settings")}
                   disabled={!validated && !reUpload}
                   className={`px-6 py-4 text-sm font-medium flex items-center gap-2 ${
                     activeTab === "settings"
@@ -993,35 +1097,19 @@ function ConfigurationContent() {
                         "Upload & Validate"
                       )}
                     </motion.button>
-                    <div className="flex space-x-4">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setIsChatOpen(true)}
-                        disabled={!(validated || project?.data_uploaded)}
-                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                          validated || project?.data_uploaded
-                            ? "bg-blue-600 text-white hover:bg-blue-700"
-                            : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        }`}
-                      >
-                        <FaRobot className="text-xl" />
-                        <span>AI Assistant</span>
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setActiveTab("settings")}
-                        disabled={!(validated || project?.data_uploaded)}
-                        className={`px-6 py-2 rounded-lg transition-colors ${
-                          validated || project?.data_uploaded
-                            ? "bg-green-600 text-white hover:bg-green-700"
-                            : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        }`}
-                      >
-                        Go to Settings
-                      </motion.button>
-                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleTabChange("additional-files")}
+                      disabled={!(validated || project?.data_uploaded)}
+                      className={`px-6 py-2 rounded-lg transition-colors ${
+                        validated || project?.data_uploaded
+                          ? "bg-green-600 text-white hover:bg-green-700"
+                          : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      }`}
+                    >
+                      Next
+                    </motion.button>
                   </div>
 
                   {/* Tips Section */}
@@ -1050,6 +1138,324 @@ function ConfigurationContent() {
                         information
                       </li>
                     </ul>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === "additional-files" && (
+                <motion.div variants={itemVariants} className="space-y-6">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                    Upload Additional Files
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Upload domain files, brand files, and other supporting
+                    documents.
+                  </p>
+
+                  {/* Error Message */}
+                  {additionalFilesError && (
+                    <motion.div
+                      className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 flex items-start"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <AlertCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium text-red-800 dark:text-red-400">
+                          Error
+                        </h3>
+                        <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                          {additionalFilesError}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Success Message */}
+                  {additionalFilesSuccess && (
+                    <motion.div
+                      className="mb-6 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 flex items-start"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <CheckCircle className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium text-green-800 dark:text-green-400">
+                          Success
+                        </h3>
+                        <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                          {additionalFilesSuccess}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Domain Files Upload */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Domain Files
+                    </h3>
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-6 ${
+                        isDragging
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20"
+                          : "border-gray-300 dark:border-gray-600"
+                      }`}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const files = Array.from(e.dataTransfer.files);
+                        setDomainFiles((prev) => [...prev, ...files]);
+                      }}
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="mb-4 p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                          <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                          {isDragging
+                            ? "Drop your files here"
+                            : "Drag & Drop your files here"}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                          or click to browse from your computer
+                        </p>
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(e) =>
+                            setDomainFiles((prev) => [
+                              ...prev,
+                              ...Array.from(e.target.files),
+                            ])
+                          }
+                          className="hidden"
+                          id="domain-files"
+                        />
+                        <label
+                          htmlFor="domain-files"
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
+                        >
+                          Select Files
+                        </label>
+                      </div>
+                      {domainFiles.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {domainFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-2 rounded"
+                            >
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
+                                {file.name}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  setDomainFiles((files) =>
+                                    files.filter((_, i) => i !== index)
+                                  )
+                                }
+                                className="text-red-500 hover:text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Brand Files Upload */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Brand Files
+                    </h3>
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-6 ${
+                        isDragging
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20"
+                          : "border-gray-300 dark:border-gray-600"
+                      }`}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const files = Array.from(e.dataTransfer.files);
+                        setBrandFiles((prev) => [...prev, ...files]);
+                      }}
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="mb-4 p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                          <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                          {isDragging
+                            ? "Drop your files here"
+                            : "Drag & Drop your files here"}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                          or click to browse from your computer
+                        </p>
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(e) =>
+                            setBrandFiles((prev) => [
+                              ...prev,
+                              ...Array.from(e.target.files),
+                            ])
+                          }
+                          className="hidden"
+                          id="brand-files"
+                        />
+                        <label
+                          htmlFor="brand-files"
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
+                        >
+                          Select Files
+                        </label>
+                      </div>
+                      {brandFiles.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {brandFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-2 rounded"
+                            >
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
+                                {file.name}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  setBrandFiles((files) =>
+                                    files.filter((_, i) => i !== index)
+                                  )
+                                }
+                                className="text-red-500 hover:text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Other Files Upload */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Other Files
+                    </h3>
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-6 ${
+                        isDragging
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20"
+                          : "border-gray-300 dark:border-gray-600"
+                      }`}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const files = Array.from(e.dataTransfer.files);
+                        setOtherFiles((prev) => [...prev, ...files]);
+                      }}
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="mb-4 p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                          <Upload className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                          {isDragging
+                            ? "Drop your files here"
+                            : "Drag & Drop your files here"}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                          or click to browse from your computer
+                        </p>
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(e) =>
+                            setOtherFiles((prev) => [
+                              ...prev,
+                              ...Array.from(e.target.files),
+                            ])
+                          }
+                          className="hidden"
+                          id="other-files"
+                        />
+                        <label
+                          htmlFor="other-files"
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
+                        >
+                          Select Files
+                        </label>
+                      </div>
+                      {otherFiles.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {otherFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-2 rounded"
+                            >
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
+                                {file.name}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  setOtherFiles((files) =>
+                                    files.filter((_, i) => i !== index)
+                                  )
+                                }
+                                className="text-red-500 hover:text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Upload Button */}
+                  <div className="flex justify-end mt-6 space-x-4">
+                    <motion.button
+                      onClick={handleAdditionalFilesUpload}
+                      disabled={
+                        additionalFilesUploading ||
+                        (!domainFiles.length &&
+                          !brandFiles.length &&
+                          !otherFiles.length)
+                      }
+                      className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {additionalFilesUploading ? (
+                        <>
+                          <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>Upload Files</>
+                      )}
+                    </motion.button>
+                    <motion.button
+                      onClick={() => handleTabChange("settings")}
+                      className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      Continue
+                      <ChevronRight className="ml-2 h-5 w-5" />
+                    </motion.button>
                   </div>
                 </motion.div>
               )}
@@ -1091,6 +1497,10 @@ function ConfigurationContent() {
                           placeholder="Select columns to drop..."
                           className="react-select-container"
                           classNamePrefix="react-select"
+                          menuPortalTarget={
+                            typeof window !== "undefined" ? document.body : null
+                          }
+                          menuPosition="fixed"
                           styles={{
                             control: (base) => ({
                               ...base,
@@ -1142,6 +1552,7 @@ function ConfigurationContent() {
                                   : "rgb(224 231 255)",
                               },
                             }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
                           }}
                           theme={(theme) => ({
                             ...theme,
@@ -1160,10 +1571,14 @@ function ConfigurationContent() {
                         whileTap={{ scale: 0.98 }}
                         onClick={handleDropColumns}
                         disabled={
-                          droppedColumns.length === 0 || droppingColumns
+                          !droppedColumns ||
+                          droppedColumns.length === 0 ||
+                          droppingColumns
                         }
                         className={`mt-2 px-4 py-2.5 rounded-md text-white flex items-center gap-2 transition-all ${
-                          droppedColumns.length === 0 || droppingColumns
+                          !droppedColumns ||
+                          droppedColumns.length === 0 ||
+                          droppingColumns
                             ? "bg-gray-400 cursor-not-allowed opacity-70"
                             : "bg-red-500 hover:bg-red-600 shadow-sm hover:shadow"
                         }`}
@@ -1302,6 +1717,10 @@ function ConfigurationContent() {
                           placeholder="Select important columns..."
                           className="react-select-container"
                           classNamePrefix="react-select"
+                          menuPortalTarget={
+                            typeof window !== "undefined" ? document.body : null
+                          }
+                          menuPosition="fixed"
                           styles={{
                             control: (base) => ({
                               ...base,
@@ -1353,6 +1772,7 @@ function ConfigurationContent() {
                                   : "rgb(219 234 254)",
                               },
                             }),
+                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
                           }}
                           theme={(theme) => ({
                             ...theme,

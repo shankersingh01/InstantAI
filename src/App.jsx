@@ -18,6 +18,8 @@ import Login from "./Pages/Login";
 import Signup from "./Pages/Signup";
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
+import FloatingChatbotButton from "./Components/FloatingChatbotButton";
+import ChatbotPage from "./Pages/ChatbotPage";
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -63,7 +65,18 @@ function Layout() {
       <AppBar />
       <div className="bg-gray-100 dark:bg-gray-900 min-h-[calc(100vh-64px)] h-[calc(100vh-64px)] overflow-hidden overflow-y-auto">
         <Outlet />
+        <FloatingChatbotButton />
       </div>
+    </>
+  );
+}
+
+// Add ProjectLayout for nested project routes
+function ProjectLayout() {
+  return (
+    <>
+      <Outlet />
+      <FloatingChatbotButton />
     </>
   );
 }
@@ -89,7 +102,7 @@ function App() {
 
           {/* Protected routes with com_id */}
           <Route
-            path="/:com_id"
+            path=":com_id"
             element={
               <ProtectedRoute>
                 <Layout />
@@ -100,8 +113,8 @@ function App() {
             <Route index element={<Home />} />
             <Route path="analysis-1" element={<AnalysisDashboard />} />
 
-            {/* Project routes */}
-            <Route path="projects/:project_id">
+            {/* Project routes - use ProjectLayout for nested routing */}
+            <Route path="projects/:project_id" element={<ProjectLayout />}>
               <Route index element={<Configuration />} />
               <Route path="upload" element={<UploadFile />} />
               <Route path="configuration" element={<Configuration />} />
@@ -111,6 +124,7 @@ function App() {
               <Route path="clustered-data" element={<ClusteringComponent />} />
               <Route path="workbench" element={<Workbench />} />
               <Route path="projection" element={<Projection />} />
+              <Route path="chatbot" element={<ChatbotPage />} />
             </Route>
           </Route>
 

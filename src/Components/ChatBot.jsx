@@ -15,10 +15,17 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { FaRobot } from "react-icons/fa";
+import { X } from "lucide-react";
 
-const ChatBot = ({ isOpen, onClose }) => {
+const ChatBot = ({
+  isOpen,
+  onClose,
+  projectId,
+  mode = "basic",
+  fullPage = false,
+}) => {
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState("");
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState(null);
@@ -26,10 +33,28 @@ const ChatBot = ({ isOpen, onClose }) => {
   const messagesEndRef = useRef(null);
   const { project_id } = useParams();
 
+  // Mode-specific configurations
+  const modeConfig = {
+    basic: {
+      title: "Basic AI Assistant",
+      description: "Ask questions about your uploaded dataset",
+      placeholder: "Ask questions about your data...",
+      icon: <FaRobot className="text-xl" />,
+    },
+    advanced: {
+      title: "Advanced AI Assistant",
+      description: "Ask questions about your clusters and segments",
+      placeholder: "Ask questions about your clusters and segments...",
+      icon: <FaRobot className="text-xl text-purple-500" />,
+    },
+  };
+
+  const currentMode = modeConfig[mode];
+
   // Reset state when component mounts or key changes
   useEffect(() => {
     setMessages([]);
-    setInputMessage("");
+    setInput("");
     setIsLoading(false);
     setIsTyping(false);
     setError(null);
@@ -111,19 +136,19 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
     }
   };
 
-  const handleSendMessage = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim()) return;
+    if (!input.trim()) return;
 
     const newMessage = {
       type: "user",
-      content: inputMessage,
+      content: input,
       timestamp: new Date().toISOString(),
       status: "sent",
     };
 
     setMessages((prev) => [...prev, newMessage]);
-    setInputMessage("");
+    setInput("");
     setIsLoading(true);
     setIsTyping(true);
     setError(null);
@@ -132,7 +157,7 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
       const response = await axiosInstance.post(
         `/projects/${project_id}/chat`,
         {
-          query: inputMessage,
+          query: input,
         }
       );
 
@@ -279,29 +304,38 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
     }
 
     if (message.type === "bot") {
+      // Standalone image rendering (not in bubble)
+      if (isBase64Image(message.content)) {
+        return (
+          <div className="flex justify-center my-4">
+            <img
+              src={JSON.parse(message.content).value}
+              alt="Generated visualization"
+              className="max-w-full max-h-96 rounded-lg shadow-md border"
+              style={{ background: "white" }}
+            />
+          </div>
+        );
+      } else if (isRawBase64Image(message.content)) {
+        return (
+          <div className="flex justify-center my-4">
+            <img
+              src={`data:image/png;base64,${message.content}`}
+              alt="Generated visualization"
+              className="max-w-full max-h-96 rounded-lg shadow-md border"
+              style={{ background: "white" }}
+            />
+          </div>
+        );
+      }
+      // All other bot messages remain in bubble
       return (
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0 mt-1">
             <FaRobot className="text-blue-600 text-xl" />
           </div>
           <div className="flex-1">
-            {isBase64Image(message.content) ? (
-              <div className="mt-2">
-                <img
-                  src={JSON.parse(message.content).value}
-                  alt="Generated visualization"
-                  className="max-w-full rounded-lg shadow-md"
-                />
-              </div>
-            ) : isRawBase64Image(message.content) ? (
-              <div className="mt-2">
-                <img
-                  src={`data:image/png;base64,${message.content}`}
-                  alt="Generated visualization"
-                  className="max-w-full rounded-lg shadow-md"
-                />
-              </div>
-            ) : isDataFrame(message.content) ? (
+            {isDataFrame(message.content) ? (
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -366,152 +400,179 @@ Feel free to ask any questions about your data, and I'll help you make sense of 
       );
     }
 
+    // User and other messages remain in bubble
     return <p className="text-sm">{message.content}</p>;
   };
+
+  if (fullPage) {
+    // Render as a normal block, not modal
+    return (
+      <div className="flex flex-col h-full min-h-[60vh]">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+          {currentMode.icon}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {currentMode.title}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {currentMode.description}
+            </p>
+          </div>
+        </div>
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`flex ${
+                message.type === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              <div
+                className={`max-w-[80%] rounded-lg p-3 ${
+                  message.type === "user"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
+                }`}
+              >
+                {renderMessage(message)}
+              </div>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+        {/* Input */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          <form onSubmit={handleSubmit} className="flex space-x-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={currentMode.placeholder}
+              className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Send
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center"
-      >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          className={`bg-white rounded-lg shadow-xl flex flex-col ${
-            isMinimized ? "w-96 h-16" : "w-4/5 h-4/5"
-          } transition-all duration-300`}
-        >
-          {/* Chat Header */}
-          <div className="p-4 bg-blue-600 text-white rounded-t-lg flex justify-between items-center">
-            <h3 className="font-semibold text-lg flex items-center space-x-2">
-              <FaRobot className="text-xl" />
-              <span>AI Assistant</span>
-            </h3>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setIsMinimized(!isMinimized)}
-                className="hover:bg-blue-700 p-1 rounded-full transition-colors"
-              >
-                {isMinimized ? (
-                  <FiMaximize2 size={20} />
-                ) : (
-                  <FiMinimize2 size={20} />
-                )}
-              </button>
+    <div className={`fixed inset-0 z-50 ${isOpen ? "block" : "hidden"}`}>
+      <div
+        className="absolute inset-0 bg-black bg-opacity-50"
+        onClick={onClose}
+      ></div>
+      <div className="absolute right-0 top-0 h-full w-96 bg-white dark:bg-gray-800 shadow-xl">
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                {currentMode.icon}
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {currentMode.title}
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {currentMode.description}
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={onClose}
-                className="hover:bg-blue-700 p-1 rounded-full transition-colors"
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
               >
-                <FiX size={20} />
+                <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
           </div>
 
-          {!isMinimized && (
-            <>
-              {/* Error Message */}
-              {error && (
-                <div className="p-2 bg-red-50 text-red-600 text-sm flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <FiAlertCircle />
-                    <span>{error}</span>
-                  </div>
-                  <button
-                    onClick={() => setError(null)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    <FiX size={16} />
-                  </button>
-                </div>
-              )}
-
-              {/* Messages Container */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((message, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${
-                      message.type === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg p-3 ${
-                        message.type === "user"
-                          ? "bg-blue-600 text-white"
-                          : message.type === "error"
-                          ? "bg-red-50"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      {renderMessage(message)}
-                      <span className="text-xs opacity-70 mt-1 block">
-                        {new Date(message.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </motion.div>
-                ))}
-                {isTyping && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex justify-start"
-                  >
-                    <div className="bg-gray-100 rounded-lg p-3">
-                      <div className="flex space-x-2">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input Form */}
-              <form
-                onSubmit={handleSendMessage}
-                className="p-4 border-t bg-gray-50"
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${
+                  message.type === "user" ? "justify-end" : "justify-start"
+                }`}
               >
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={isLoading}
-                  />
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    type="submit"
-                    disabled={isLoading || !inputMessage.trim()}
-                    className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    <FiSend size={20} />
-                  </motion.button>
+                <div
+                  className={`max-w-[80%] rounded-lg p-3 ${
+                    message.type === "user"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
+                  }`}
+                >
+                  {renderMessage(message)}
                 </div>
-              </form>
-            </>
-          )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3">
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <form onSubmit={handleSubmit} className="flex space-x-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={currentMode.placeholder}
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
 ChatBot.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  projectId: PropTypes.string.isRequired,
+  mode: PropTypes.string,
+  fullPage: PropTypes.bool,
 };
 
 export default ChatBot;
