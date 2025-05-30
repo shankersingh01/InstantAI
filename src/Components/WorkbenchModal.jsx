@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useNavigate } from "react-router-dom"
-import axios from "axios"
-import { motion, AnimatePresence } from "framer-motion"
-import { X, Check, Database, Loader2 } from "lucide-react"
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Check, Database, Loader2 } from "lucide-react";
 
 const WorkbenchModal = ({
   categorical_columns,
@@ -14,49 +14,60 @@ const WorkbenchModal = ({
   showModal,
   setShowModal,
   project_id,
+  com_id,
 }) => {
-  const baseUrl = import.meta.env.VITE_BASE_URL
-  const navigate = useNavigate()
-  const [selectedColumns, setSelectedColumns] = useState([])
-  const [loading, setLoading] = useState(false)
+  const baseUrl = import.meta.env.VITE_BASE_URL;
+  const navigate = useNavigate();
+  const [selectedColumns, setSelectedColumns] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   // Animation variants
   const backdropVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1 },
-  }
+  };
 
   const modalVariants = {
     hidden: { opacity: 0, y: 50, scale: 0.95 },
-    visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", damping: 25, stiffness: 300 } },
-  }
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { type: "spring", damping: 25, stiffness: 300 },
+    },
+  };
 
   const handleChecks = (e) => {
-    const { checked, value } = e.target
-    setSelectedColumns((prev) => (checked ? [...prev, value] : prev.filter((col) => col !== value)))
-  }
+    const { checked, value } = e.target;
+    setSelectedColumns((prev) =>
+      checked ? [...prev, value] : prev.filter((col) => col !== value)
+    );
+  };
 
   const handleSubmit = async () => {
     try {
-      setLoading(true)
+      setLoading(true);
       const encodingPromises = selectedColumns.map((column) =>
-        axios.post(`${baseUrl}/projects/${project_id}/time-series/encoded-columns`, {
-          project_id,
-          column_name: column,
-          level: currentLevel,
-          path: currentPath,
-        }),
-      )
-      const responses = await Promise.all(encodingPromises)
-      const newEncodedCols = {}
+        axios.post(
+          `${baseUrl}/projects/${project_id}/time-series/encoded-columns`,
+          {
+            project_id,
+            column_name: column,
+            level: currentLevel,
+            path: currentPath,
+          }
+        )
+      );
+      const responses = await Promise.all(encodingPromises);
+      const newEncodedCols = {};
 
       responses.forEach((response, index) => {
-        const column = selectedColumns[index]
-        newEncodedCols[column] = response.data.categorical_column
-      })
+        const column = selectedColumns[index];
+        newEncodedCols[column] = response.data.categorical_column;
+      });
 
-      setShowModal(false)
-      navigate(`/projects/${project_id}/workbench`, {
+      setShowModal(false);
+      navigate(`/${com_id}/projects/${project_id}/workbench`, {
         state: {
           currentLevel,
           currentPath,
@@ -64,13 +75,13 @@ const WorkbenchModal = ({
           encodedCols: newEncodedCols,
           categorical_columns,
         },
-      })
+      });
     } catch (error) {
-      console.error("Error submitting data:", error.response?.data?.message)
+      console.error("Error submitting data:", error.response?.data?.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <AnimatePresence>
@@ -111,7 +122,8 @@ const WorkbenchModal = ({
           {/* Modal Content */}
           <div className="p-4">
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Select the categorical columns you want to include in your workbench analysis:
+              Select the categorical columns you want to include in your
+              workbench analysis:
             </p>
 
             <div className="max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
@@ -137,13 +149,18 @@ const WorkbenchModal = ({
                       />
                       <div
                         className={`absolute inset-0 rounded flex items-center justify-center transition-opacity ${
-                          selectedColumns.includes(column) ? "opacity-100" : "opacity-0"
+                          selectedColumns.includes(column)
+                            ? "opacity-100"
+                            : "opacity-0"
                         }`}
                       >
                         <Check className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                       </div>
                     </div>
-                    <label htmlFor={column} className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1">
+                    <label
+                      htmlFor={column}
+                      className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1"
+                    >
                       {column}
                     </label>
                   </motion.div>
@@ -190,8 +207,7 @@ const WorkbenchModal = ({
         </motion.div>
       </motion.div>
     </AnimatePresence>
-  )
-}
+  );
+};
 
-export default WorkbenchModal
-
+export default WorkbenchModal;

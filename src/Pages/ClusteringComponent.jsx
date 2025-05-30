@@ -7,7 +7,11 @@ import { ArrowBigDownDash, ChevronRight } from "lucide-react";
 import ClusterHistorySection from "../Components/ClusterHistorySection";
 import ClusterTreeVisualization from "../Components/ClusterTreeVisualization";
 import { useDispatch, useSelector } from "react-redux";
-import { setClusterHistory, setClusters } from "../redux/clusterSlice";
+import {
+  setClusterHistory,
+  setClusters,
+  setSelectedIndex,
+} from "../redux/clusterSlice";
 import { CircularProgress, Typography, Box } from "@mui/material";
 import ClusterDropdown from "../Components/ClusterDropdown";
 import WorkbenchModal from "../Components/WorkbenchModal";
@@ -15,6 +19,7 @@ import DefinationModel from "../Components/DefinationModel";
 import SelectableClusterPopup from "../Components/SelectableClustorPopup";
 import { restoreProjectState } from "../redux/projectsSlice";
 import axiosInstance from "../utils/axiosInstance";
+import React from "react";
 
 // Utility function for Indian number formatting
 function formatIndianNumber(num) {
@@ -61,6 +66,11 @@ const ClusteringComponent = () => {
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
 
+  // Ref to track if processData has been called for the current project and KPI
+  const processCalledRef = React.useRef({});
+  // Ref to track the last index for which updateClusterJourney was called
+  const lastUpdatedRef = React.useRef({}); // Use an object to store project_id and index
+
   // Fetch and restore project state on mount
   useEffect(() => {
     const fetchAndRestoreProject = async () => {
@@ -69,46 +79,99 @@ const ClusteringComponent = () => {
           `/${com_id}/projects/${project_id}`
         );
         if (response.data) {
+          const projectData = response.data;
           dispatch(
             restoreProjectState({
               projectId: project_id,
               project_id: project_id,
-              columns: (response.data.total_columns || []).map((name, idx) => ({
+              columns: (projectData.total_columns || []).map((name, idx) => ({
                 id: idx + 1,
                 name,
                 type: "string",
                 description: name,
               })),
-              importantColumnNames: response.data.important_columns || [],
-              kpiList: response.data.kpi_columns || [],
-              droppedColumns: response.data.dropped_columns || [],
-              uploadedFileData: response.data.uploadedFileData || [],
-              selectedKpi: response.data.selectedKpi || null,
-              data_uploaded: response.data.data_uploaded,
-              clusters: response.data.clusters || null,
-              currentStep: response.data.clusters
+              importantColumnNames: projectData.important_columns || [],
+              kpiList: projectData.kpi_columns || [],
+              droppedColumns: projectData.dropped_columns || [],
+              uploadedFileData: projectData.uploadedFileData || [],
+              selectedKpi: projectData.selectedKpi || null,
+              data_uploaded: projectData.data_uploaded,
+              clusters: projectData.clusters || null,
+              currentStep: projectData.clusters
                 ? "clustering"
-                : response.data.data_uploaded
+                : projectData.data_uploaded
                 ? "analysis"
                 : "configuration",
-              analysisComplete: !!response.data.clusters,
+              analysisComplete: !!projectData.clusters,
             })
           );
+
+          // Fetch cluster journey
+          const journeyResponse = await axios.get(
+            `${baseUrl}/get-cluster-journey`,
+            {
+              params: {
+                project_id: project_id,
+              },
+            }
+          );
+          if (journeyResponse.data && journeyResponse.data.cluster_journey) {
+            const savedJourney = journeyResponse.data.cluster_journey;
+            console.log("Restoring saved journey:", savedJourney);
+
+            // Update local state
+            setJourney(savedJourney);
+            setCurrentSelectionIndex(savedJourney.length - 1);
+
+            // Update Redux state
+            dispatch(setClusterHistory(savedJourney));
+            dispatch(setSelectedIndex(savedJourney.length - 1));
+
+            // Update breadcrumb path
+            const pathIndices = savedJourney.map((j) => j.clusterIndex);
+            setBreadcrumbPath(pathIndices);
+
+            // Update current level
+            if (savedJourney.length > 0) {
+              setCurrentLevel(savedJourney[savedJourney.length - 1].level + 1);
+            }
+          }
+
           // If clusters exist, use them directly
-          if (response.data.clusters) {
-            setClusterTree(response.data.clusters);
+          if (projectData.clusters) {
+            setClusterTree(projectData.clusters);
             // Set extractedClusters to the children of the root node for the current KPI
-            const kpi = newkpi || Object.keys(response.data.clusters)[0];
-            setExtractedClusters(response.data.clusters[kpi]?.children || []);
+            const kpi = newkpi || Object.keys(projectData.clusters)[0];
+            const rootCluster = projectData.clusters[kpi];
+            if (rootCluster && rootCluster.children) {
+              setGroupedClusters(transformClusterData(rootCluster.children));
+              setExtractedClusters(rootCluster.children);
+            }
             setLoading(false);
-            return;
+          } else if (newkpi && project_id) {
+            // If no clusters and KPI is set, check if processData has been called
+            const key = `${project_id}-${newkpi}`;
+            if (!processCalledRef.current[key]) {
+              console.log(
+                "No clusters found and not yet processed, calling processData..."
+              );
+              processData(newkpi);
+              processCalledRef.current[key] = true;
+            }
+          }
+        } else if (newkpi && project_id) {
+          // If no response data and KPI is set, check if processData has been called
+          const key = `${project_id}-${newkpi}`;
+          if (!processCalledRef.current[key]) {
+            console.log(
+              "No project data found and not yet processed, calling processData..."
+            );
+            processData(newkpi);
+            processCalledRef.current[key] = true;
           }
         }
-        // If no clusters, proceed with processData as usual
-        if (newkpi && project_id) {
-          processData(newkpi);
-        }
       } catch (error) {
+        console.error("Error fetching project data:", error);
         setError(error);
         setLoading(false);
       }
@@ -118,6 +181,24 @@ const ClusteringComponent = () => {
     }
     // eslint-disable-next-line
   }, [com_id, project_id, newkpi]);
+
+  // Trigger processData if clusters are null for the selected KPI after initial load and KPI is set
+  useEffect(() => {
+    // Only run this effect if not currently loading and no errors
+    if (!loading && !error && newkpi && project_id) {
+      // Check if clusterTree is null or if the selected KPI has no children (no clusters)
+      if (
+        !clusterTree ||
+        !clusterTree[newkpi] ||
+        clusterTree[newkpi].children?.length === 0
+      ) {
+        console.log(
+          "Clusters for selected KPI are missing or empty after load, calling processData..."
+        );
+        processData(newkpi);
+      }
+    }
+  }, [clusterTree, newkpi, loading, error, project_id]); // Add project_id as dependency
 
   // Data transformation functions
   const transformClusterData = (clusters) => {
@@ -272,20 +353,150 @@ const ClusteringComponent = () => {
         clusterIndex: selectedClusterIndex,
         feature: selectedCell.feature,
         value: selectedCell.value,
+        level: currentLevel,
+        path: breadcrumbPath,
+        cluster: `Cluster ${selectedClusterIndex + 1}`,
+        percentage: selectedCell.percentage,
       };
       const newJourney = [...baseJourney, newStep];
+
+      // Update local state
       setJourney(newJourney);
-      setCurrentSelectionIndex(newJourney.length - 1);
+      const nextSelectionIndex = newJourney.length - 1; // Calculate the next index
+      setCurrentSelectionIndex(nextSelectionIndex);
+
       // Update table view
       const pathIndices = newJourney.map((j) => j.clusterIndex);
       setBreadcrumbPath(pathIndices);
-      const newNode = getClusterByPath(clusterTree[newkpi], pathIndices);
-      if (newNode && newNode.children) {
-        setGroupedClusters(transformClusterData(newNode.children));
+
+      // Update Redux state
+      dispatch(setClusterHistory(newJourney));
+      dispatch(setSelectedIndex(nextSelectionIndex));
+
+      // Trigger updateClusterJourney here, guarded by the ref
+      // REMOVED: Moving API call logic back to a useEffect
+      /*
+      const currentJourneyKey = `${project_id}-${nextSelectionIndex}`;
+      if (lastUpdatedRef.current.key !== currentJourneyKey) {
+         console.log("Analyzing new segment, triggering API call...");
+         updateClusterJourney(newJourney, nextSelectionIndex);
+         lastUpdatedRef.current = { key: currentJourneyKey }; // Update ref with the new key
       }
+      */
+
+      // Update table view based on the new journey path (this part should already be handled by useEffect)
+      // Removing the explicit table view update here to avoid potential conflicts
+      // const newNode = getClusterByPath(clusterTree[newkpi], pathIndices);
+      // if (newNode && newNode.children) {
+      //   setGroupedClusters(transformClusterData(newNode.children));
+      // }
+
       setSelectedClusterIndex(null);
     }
   };
+
+  // Trigger updateClusterJourney when the journey is updated after Analyze click
+  useEffect(() => {
+    // Only update if journey is not empty and the selection index is the last element
+    // Also, only call if the current journey state hasn't been updated yet
+    const currentJourneyKey = `${project_id}-${currentSelectionIndex}`;
+    if (
+      journey.length > 0 &&
+      currentSelectionIndex === journey.length - 1 &&
+      lastUpdatedRef.current.key !== currentJourneyKey
+    ) {
+      console.log("Journey state finalized, triggering API call...");
+      updateClusterJourney(journey, currentSelectionIndex);
+      lastUpdatedRef.current = { key: currentJourneyKey }; // Update the ref after successful call
+    }
+  }, [journey, currentSelectionIndex, project_id]); // Add project_id as dependency
+
+  const updateClusterJourney = async (journey, selectionIndex) => {
+    try {
+      // Calculate the correct level
+      let level = 0;
+      if (journey.length > 0 && journey[journey.length - 1].level != null) {
+        level = Number(journey[journey.length - 1].level) + 1;
+      }
+      // Convert the journey data to ensure all values are strings
+      // We only send the newly added step(s) to append to the backend journey
+      const newSteps = journey.slice(selectionIndex);
+      const formattedNewSteps = newSteps.map((step) => ({
+        ...step,
+        value: String(step.value), // Convert value to string
+        level, // Always use calculated level
+        clusterIndex: Number(step.clusterIndex), // Keep clusterIndex as number
+        path: step.path.map(Number), // Convert path elements to numbers
+        percentage: step.percentage ? String(step.percentage) : undefined, // Convert percentage to string if it exists
+      }));
+
+      console.log(
+        "Updating cluster journey with new steps:",
+        formattedNewSteps
+      );
+      console.log("Level being sent:", level);
+      const response = await axios.post(`${baseUrl}/update-cluster-journey`, {
+        project_id,
+        cluster_journey: formattedNewSteps, // Send only the new steps
+        cluster_selection_index: selectionIndex,
+      });
+      console.log("Cluster journey update response:", response.data);
+    } catch (error) {
+      console.error(
+        "Error updating cluster journey:",
+        error.response?.data || error
+      );
+    }
+  };
+
+  // Update groupedClusters and extractedClusters when journey, clusterTree, or newkpi changes
+  useEffect(() => {
+    if (clusterTree && newkpi) {
+      const kpi = newkpi || Object.keys(clusterTree)[0];
+      const rootCluster = clusterTree[kpi];
+
+      if (journey.length > 0) {
+        const pathIndices = journey.map((j) => j.clusterIndex);
+        const node = getClusterByPath(rootCluster, pathIndices);
+        if (node && node.children) {
+          setGroupedClusters(transformClusterData(node.children));
+          setExtractedClusters(node.children);
+        }
+      } else if (rootCluster && rootCluster.children) {
+        // If no journey, show root cluster
+        setGroupedClusters(transformClusterData(rootCluster.children));
+        setExtractedClusters(rootCluster.children);
+      }
+    }
+  }, [journey, clusterTree, newkpi]);
+
+  // Initialize journey from Redux state on mount - Keeping this separate as it depends on Redux state after initial fetch
+  useEffect(() => {
+    if (clusterHistory && clusterHistory.length > 0) {
+      setJourney(clusterHistory);
+      setCurrentSelectionIndex(selectedIndex);
+
+      // Also update groupedClusters and extractedClusters based on restored journey
+      if (clusterTree && newkpi) {
+        const kpi = newkpi || Object.keys(clusterTree)[0];
+        const rootCluster = clusterTree[kpi];
+        const pathIndices = clusterHistory.map((j) => j.clusterIndex);
+        const node = getClusterByPath(rootCluster, pathIndices);
+        if (node && node.children) {
+          setGroupedClusters(transformClusterData(node.children));
+          setExtractedClusters(node.children);
+        } else if (
+          rootCluster &&
+          rootCluster.children &&
+          clusterHistory.length === 0
+        ) {
+          // If journey is empty after restore, show root cluster
+          setGroupedClusters(transformClusterData(rootCluster.children));
+          setExtractedClusters(rootCluster.children);
+        }
+      }
+    }
+  }, [clusterHistory, selectedIndex, clusterTree, newkpi]); // Add clusterTree and newkpi as dependencies
 
   const handleNavigateToPath = (pathIndices) => {
     // Find the index in the journey that matches the path
@@ -397,18 +608,6 @@ const ClusteringComponent = () => {
     }
   };
 
-  // Add useEffect to update groupedClusters when clusterTree or newkpi changes (initial load or KPI change)
-  useEffect(() => {
-    if (
-      clusterTree &&
-      newkpi &&
-      clusterTree[newkpi] &&
-      clusterTree[newkpi].children
-    ) {
-      setGroupedClusters(transformClusterData(clusterTree[newkpi].children));
-    }
-  }, [clusterTree, newkpi]);
-
   if (!project_id || !location.state) {
     return (
       <Box
@@ -475,18 +674,18 @@ const ClusteringComponent = () => {
   }
 
   // Show "No data" message only if we're not loading and there's no error
-  if (!extractedClusters || extractedClusters.length === 0) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="100vh"
-      >
-        <Typography>No cluster data available</Typography>
-      </Box>
-    );
-  }
+  // if (!extractedClusters || extractedClusters.length === 0) {
+  //   return (
+  //     <Box
+  //       display="flex"
+  //       justifyContent="center"
+  //       alignItems="center"
+  //       minHeight="100vh"
+  //     >
+  //       <Typography>No more clusters can be formed</Typography>
+  //     </Box>
+  //   );
+  // }
 
   const currentNode =
     breadcrumbPath.length === 0
@@ -606,7 +805,7 @@ const ClusteringComponent = () => {
                     </Box>
                   )}
                   {error && <p className="text-red-500 p-4">Error: {error}</p>}
-                  {!loading && !error && currentClusters.length > 0 && (
+                  {!loading && !error && (
                     <table className="w-[calc(100vw-20rem)] divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
@@ -644,121 +843,147 @@ const ClusteringComponent = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {filterImportantFeatures(
-                          Object.keys(groupedClusters.top1)
-                        ).map((feature) => (
-                          <tr key={feature} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
-                              {feature}
+                        {currentClusters.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={2}
+                              className="text-center py-8 text-gray-500"
+                            >
+                              No more clusters can be formed
                             </td>
-                            {currentClusters.map((_, clusterIndex) => {
-                              const value =
-                                groupedClusters.top1?.[feature]?.[clusterIndex]
-                                  ?.original?.Value ??
-                                groupedClusters.mean?.[feature]?.[clusterIndex]
-                                  ?.original?.Mean ??
-                                0;
-                              const percentage =
-                                groupedClusters.top1[feature]?.[clusterIndex]
-                                  ?.original?.Percentage;
-                              return (
-                                <td
-                                  key={clusterIndex}
-                                  className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                    selectedCell?.feature === feature &&
-                                    selectedCell?.clusterIndex === clusterIndex
-                                      ? "bg-indigo-100"
-                                      : ""
-                                  }`}
-                                  onClick={() =>
-                                    handleCellClick(
-                                      feature,
-                                      clusterIndex,
-                                      value
-                                    )
-                                  }
-                                >
-                                  <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
-                                    {typeof value === "number" && !isNaN(value)
-                                      ? formatIndianNumber(value)
-                                      : value}
-                                    {percentage !== undefined && (
-                                      <span className="ml-2 text-sm text-gray-500">
-                                        - {percentage}{" "}
-                                        <span
-                                          className="pl-4"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleDropdown(
-                                              e,
-                                              feature,
-                                              clusterIndex
-                                            );
-                                          }}
-                                        >
-                                          ▼
-                                        </span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  {openDropdowns[
-                                    `${feature}-${clusterIndex}`
-                                  ] && (
-                                    <ClusterDropdown
-                                      groupedClusters={groupedClusters}
-                                      feature={feature}
-                                      handleCellClick={handleCellClick}
-                                      toggleDropdown={toggleDropdown}
-                                      clusterIndex={clusterIndex}
-                                    />
-                                  )}
-                                </td>
-                              );
-                            })}
                           </tr>
-                        ))}
-                        {filterImportantFeatures(
-                          Object.keys(groupedClusters.mean)
-                        ).map((feature) => (
-                          <tr key={feature} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
-                              {feature}
-                            </td>
-                            {currentClusters.map((_, clusterIndex) => {
-                              const mean =
-                                groupedClusters.mean?.[feature]?.[clusterIndex]
-                                  ?.original?.Mean;
-                              const count =
-                                groupedClusters.mean?.[feature]?.[clusterIndex]
-                                  ?.original?.Count;
-                              return (
-                                <td
-                                  key={clusterIndex}
-                                  className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                    selectedCell?.feature === feature &&
-                                    selectedCell?.clusterIndex === clusterIndex
-                                      ? "bg-indigo-100"
-                                      : ""
-                                  }`}
-                                  onClick={() =>
-                                    handleCellClick(feature, clusterIndex, mean)
-                                  }
-                                >
-                                  <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors">
-                                    {typeof mean === "number" && !isNaN(mean)
-                                      ? formatIndianNumber(mean)
-                                      : mean}
-                                    {count !== undefined && (
-                                      <span className="ml-2 text-sm text-gray-500">
-                                        ({formatIndianNumber(count)})
-                                      </span>
-                                    )}
-                                  </div>
+                        ) : (
+                          <>
+                            {filterImportantFeatures(
+                              Object.keys(groupedClusters.top1)
+                            ).map((feature) => (
+                              <tr key={feature} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
+                                  {feature}
                                 </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                                {currentClusters.map((_, clusterIndex) => {
+                                  const value =
+                                    groupedClusters.top1?.[feature]?.[
+                                      clusterIndex
+                                    ]?.original?.Value ??
+                                    groupedClusters.mean?.[feature]?.[
+                                      clusterIndex
+                                    ]?.original?.Mean ??
+                                    0;
+                                  const percentage =
+                                    groupedClusters.top1[feature]?.[
+                                      clusterIndex
+                                    ]?.original?.Percentage;
+                                  return (
+                                    <td
+                                      key={clusterIndex}
+                                      className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                        selectedCell?.feature === feature &&
+                                        selectedCell?.clusterIndex ===
+                                          clusterIndex
+                                          ? "bg-indigo-100"
+                                          : ""
+                                      }`}
+                                      onClick={() =>
+                                        handleCellClick(
+                                          feature,
+                                          clusterIndex,
+                                          value
+                                        )
+                                      }
+                                    >
+                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                        {typeof value === "number" &&
+                                        !isNaN(value)
+                                          ? formatIndianNumber(value)
+                                          : value}
+                                        {percentage !== undefined && (
+                                          <span className="ml-2 text-sm text-gray-500">
+                                            - {percentage}{" "}
+                                            <span
+                                              className="pl-4"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleDropdown(
+                                                  e,
+                                                  feature,
+                                                  clusterIndex
+                                                );
+                                              }}
+                                            >
+                                              ▼
+                                            </span>
+                                          </span>
+                                        )}
+                                      </div>
+                                      {openDropdowns[
+                                        `${feature}-${clusterIndex}`
+                                      ] && (
+                                        <ClusterDropdown
+                                          groupedClusters={groupedClusters}
+                                          feature={feature}
+                                          handleCellClick={handleCellClick}
+                                          toggleDropdown={toggleDropdown}
+                                          clusterIndex={clusterIndex}
+                                        />
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                            {filterImportantFeatures(
+                              Object.keys(groupedClusters.mean)
+                            ).map((feature) => (
+                              <tr key={feature} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white">
+                                  {feature}
+                                </td>
+                                {currentClusters.map((_, clusterIndex) => {
+                                  const mean =
+                                    groupedClusters.mean?.[feature]?.[
+                                      clusterIndex
+                                    ]?.original?.Mean;
+                                  const count =
+                                    groupedClusters.mean?.[feature]?.[
+                                      clusterIndex
+                                    ]?.original?.Count;
+                                  return (
+                                    <td
+                                      key={clusterIndex}
+                                      className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                        selectedCell?.feature === feature &&
+                                        selectedCell?.clusterIndex ===
+                                          clusterIndex
+                                          ? "bg-indigo-100"
+                                          : ""
+                                      }`}
+                                      onClick={() =>
+                                        handleCellClick(
+                                          feature,
+                                          clusterIndex,
+                                          mean
+                                        )
+                                      }
+                                    >
+                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors">
+                                        {typeof mean === "number" &&
+                                        !isNaN(mean)
+                                          ? formatIndianNumber(mean)
+                                          : mean}
+                                        {count !== undefined && (
+                                          <span className="ml-2 text-sm text-gray-500">
+                                            ({formatIndianNumber(count)})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </>
+                        )}
                       </tbody>
                     </table>
                   )}
@@ -778,7 +1003,7 @@ const ClusteringComponent = () => {
                 </button>
                 <button
                   onClick={() =>
-                    navigate(`/projects/${project_id}/workbench`, {
+                    navigate(`/${com_id}/projects/${project_id}/workbench`, {
                       state: {
                         activeKPI: newkpi,
                         kpiList,
@@ -818,6 +1043,7 @@ const ClusteringComponent = () => {
             showModal={showModal}
             setShowModal={setShowModal}
             project_id={project_id}
+            com_id={com_id}
           />
         )}
         {isOpen && (

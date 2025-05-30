@@ -1,7 +1,7 @@
 "use client";
 
 import { useSelector } from "react-redux";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,29 +32,113 @@ const Workbench = () => {
   const { activeKPI, kpiList, task_id, importantColumnNames } =
     location.state || {};
   const { project_id, com_id } = useParams();
-  const [adjustments, setAdjustments] = useState({});
-  const [noOfMonths, setNoOfMonths] = useState(12);
-  const [dateColumn, setDateColumn] = useState("");
-  const [weightData, setWeightData] = useState({});
+  const [storedClusterJourney, setStoredClusterJourney] = useState([]);
+  const [isLoadingJourney, setIsLoadingJourney] = useState(true);
+
+  // Initialize state with persisted values
+  const [checkedState, setCheckedState] = useState(() => {
+    const saved = localStorage.getItem(`workbench_checked_${project_id}`);
+    return saved
+      ? JSON.parse(saved)
+      : new Array(clusterHistory?.length || 0).fill(false);
+  });
+
+  const [isPopupVisible, setIsPopupVisible] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const columns = JSON.parse(localStorage.getItem("columns") || "[]");
+
+  const [adjustments, setAdjustments] = useState(() => {
+    const saved = localStorage.getItem(`workbench_adjustments_${project_id}`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [noOfMonths, setNoOfMonths] = useState(() => {
+    const saved = localStorage.getItem(`workbench_months_${project_id}`);
+    return saved ? parseInt(saved) : 12;
+  });
+
+  const [dateColumn, setDateColumn] = useState(() => {
+    const saved = localStorage.getItem(`workbench_date_column_${project_id}`);
+    return saved || "";
+  });
+
+  const [weightData, setWeightData] = useState(() => {
+    const saved = localStorage.getItem(`workbench_weight_data_${project_id}`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [columns, setColumns] = useState([]);
   const baseUrl = import.meta.env.VITE_BASE_URL;
 
-  const regressors = Object.values(weightData)
-    ?.flat()
-    ?.map((item) => item.feature);
+  const [childCheckedState, setChildCheckedState] = useState(() => {
+    const saved = localStorage.getItem(`workbench_child_checked_${project_id}`);
+    return saved ? JSON.parse(saved) : {};
+  });
 
-  const [isPopupVisible, setIsPopupVisible] = useState(false);
-  const [plotData, setPlotData] = useState([]);
-  const [plotLayout, setPlotLayout] = useState({});
+  const [expandedSections, setExpandedSections] = useState(() => {
+    const saved = localStorage.getItem(`workbench_expanded_${project_id}`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const [plotData] = useState([]);
+  const [plotLayout] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  const [checkedState, setCheckedState] = React.useState(
-    new Array(clusterHistory.length).fill(false)
-  );
-  const [childCheckedState, setChildCheckedState] = React.useState({});
-  const [expandedSections, setExpandedSections] = useState({});
+
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_checked_${project_id}`,
+      JSON.stringify(checkedState)
+    );
+  }, [checkedState, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_adjustments_${project_id}`,
+      JSON.stringify(adjustments)
+    );
+  }, [adjustments, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_months_${project_id}`,
+      noOfMonths.toString()
+    );
+  }, [noOfMonths, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(`workbench_date_column_${project_id}`, dateColumn);
+  }, [dateColumn, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_weight_data_${project_id}`,
+      JSON.stringify(weightData)
+    );
+  }, [weightData, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_child_checked_${project_id}`,
+      JSON.stringify(childCheckedState)
+    );
+  }, [childCheckedState, project_id]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `workbench_expanded_${project_id}`,
+      JSON.stringify(expandedSections)
+    );
+  }, [expandedSections, project_id]);
+
+  // Clear persisted data when component unmounts
+  useEffect(() => {
+    return () => {
+      // Don't clear the data on unmount as we want to persist it
+      // This is just a placeholder for future cleanup if needed
+    };
+  }, []);
 
   // Animation variants
   const containerVariants = {
@@ -86,40 +170,286 @@ const Workbench = () => {
     },
   };
 
+  // Fetch columns when component mounts
+  useEffect(() => {
+    const fetchColumns = async () => {
+      try {
+        // First try to get columns from sessionStorage
+        const storedColumns = sessionStorage.getItem("columns");
+        if (storedColumns) {
+          try {
+            const parsedColumns = JSON.parse(storedColumns);
+            setColumns(parsedColumns);
+            return;
+          } catch (parseError) {
+            console.error("Error parsing stored columns:", parseError);
+          }
+        }
+
+        // If no stored columns or parsing failed, fetch from API
+        const response = await axios.get(
+          `${baseUrl}/projects/${project_id}/get_columns`
+        );
+
+        if (response.data && Array.isArray(response.data)) {
+          setColumns(response.data);
+          // Store the columns in sessionStorage for future use
+          sessionStorage.setItem("columns", JSON.stringify(response.data));
+        } else if (
+          response.data &&
+          response.data.columns &&
+          Array.isArray(response.data.columns)
+        ) {
+          setColumns(response.data.columns);
+          // Store the columns in sessionStorage for future use
+          sessionStorage.setItem(
+            "columns",
+            JSON.stringify(response.data.columns)
+          );
+        } else {
+          console.error("Invalid columns data in response:", response.data);
+          setError("Invalid columns data received from server");
+        }
+      } catch (error) {
+        console.error("Error fetching columns:", error);
+        if (error.response) {
+          setError(
+            `Error loading columns: ${
+              error.response.data?.message || error.response.statusText
+            }`
+          );
+        } else if (error.request) {
+          setError("No response from server while loading columns");
+        } else {
+          setError("Error loading columns data");
+        }
+      }
+    };
+
+    if (project_id) {
+      fetchColumns();
+    }
+  }, [project_id, baseUrl]);
+
+  // Fetch cluster journey when component mounts
+  useEffect(() => {
+    console.log("Workbench useEffect running", { project_id, baseUrl });
+    const fetchProjectData = async () => {
+      if (!project_id) {
+        console.log("No project_id, skipping fetch");
+        setError("Project ID is missing. Cannot load workbench data.");
+        setIsLoadingJourney(false);
+        return;
+      }
+      console.log("Fetching cluster journey for project_id:", project_id);
+      setIsLoadingJourney(true);
+      setError(null);
+
+      try {
+        console.log(
+          `Attempting to fetch project data for project ID: ${project_id}`
+        );
+        // Fetch cluster journey using the correct endpoint
+        const journeyResponse = await axios.get(
+          `${baseUrl}/get-cluster-journey`,
+          {
+            params: {
+              project_id: project_id,
+            },
+          }
+        );
+
+        console.log("Journey fetch response:", journeyResponse.data);
+
+        if (journeyResponse.data && journeyResponse.data.cluster_journey) {
+          const fetchedJourney = journeyResponse.data.cluster_journey;
+          setStoredClusterJourney(fetchedJourney);
+          console.log(
+            "Successfully fetched and set cluster journey.",
+            fetchedJourney
+          );
+        } else {
+          console.log(
+            "No cluster journey found in backend response, falling back to Redux."
+          );
+          // Fallback to Redux state if backend doesn't have the journey
+          if (clusterHistory && clusterHistory.length > 0) {
+            setStoredClusterJourney(clusterHistory);
+            console.log(
+              "Using Redux cluster history as fallback.",
+              clusterHistory
+            );
+          } else {
+            setStoredClusterJourney([]); // Ensure it's an empty array if no data anywhere
+            console.log("No cluster history available in backend or Redux.");
+            // Optionally set a message for the user
+            // setError("No cluster journey found for this project.");
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching project data:", err);
+        // Check for specific error types and provide user feedback
+        if (err.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          console.error("Error response data:", err.response.data);
+          console.error("Error response status:", err.response.status);
+          console.error("Error response headers:", err.response.headers);
+          if (err.response.status === 404) {
+            setError("Project or cluster journey not found.");
+          } else {
+            setError(`Failed to load cluster journey: ${err.response.status}`);
+          }
+        } else if (err.request) {
+          // The request was made but no response was received
+          console.error("Error request:", err.request);
+          setError("Failed to load cluster journey: No response from server.");
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          console.error("Error message:", err.message);
+          setError(`Failed to load cluster journey: ${err.message}`);
+        }
+
+        // Fallback to Redux state even on error if available
+        if (clusterHistory && clusterHistory.length > 0) {
+          setStoredClusterJourney(clusterHistory);
+          console.log(
+            "Using Redux cluster history as fallback after error.",
+            clusterHistory
+          );
+        } else {
+          setStoredClusterJourney([]); // Ensure it's an empty array on error if no Redux data
+        }
+      }
+      setIsLoadingJourney(false);
+    };
+
+    fetchProjectData();
+  }, [project_id, baseUrl]);
+
+  // Re-initialize checkedState when displayClusterHistory changes, only if there is data
+  // useEffect(() => {
+  //   if (displayClusterHistory.length > 0) {
+  //     setCheckedState(new Array(displayClusterHistory.length).fill(false));
+  //   }
+  // }, [displayClusterHistory]);
+
+  // Show loading state while fetching cluster journey
+  if (isLoadingJourney) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+          <p className="text-gray-600 dark:text-gray-400">
+            Loading cluster journey...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if there's an error
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+          <div className="flex items-center gap-3 text-red-500 mb-4">
+            <Info className="h-6 w-6" />
+            <h2 className="text-lg font-semibold">Error Loading Data</h2>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                // Ensure we have the required state data
+                const stateData = {
+                  activeKPI: activeKPI || "",
+                  kpiList: kpiList || [],
+                  importantColumnNames: importantColumnNames || [],
+                  project_id: project_id,
+                };
+                navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
+                  state: stateData,
+                });
+              }}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={() => {
+                // Reload the current page with the same state
+                navigate(`/${com_id}/projects/${project_id}/workbench`, {
+                  state: {
+                    activeKPI,
+                    kpiList,
+                    importantColumnNames,
+                    project_id,
+                  },
+                });
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Use stored cluster journey if available, otherwise use Redux state
+  const displayClusterHistory =
+    storedClusterJourney.length > 0 ? storedClusterJourney : clusterHistory;
+
+  // Debug logs to diagnose blank UI
+  console.log("storedClusterJourney", storedClusterJourney);
+  console.log("clusterHistory", clusterHistory);
+  console.log("isLoadingJourney", isLoadingJourney);
+  console.log("error", error);
+  console.log("displayClusterHistory", displayClusterHistory);
+
+  const handleCheckboxChange = (index) => {
+    const updatedCheckedState = checkedState.map((item, idx) =>
+      idx === index ? !item : item
+    );
+    setCheckedState(updatedCheckedState);
+  };
+
+  const handleInputChange = (index, value) => {
+    const feature = storedClusterJourney[index].feature;
+    setAdjustments((prevAdjustments) => ({
+      ...prevAdjustments,
+      [feature]: value,
+    }));
+  };
+
   const handleActionClick = async () => {
-    // Validate required fields
-    if (!dateColumn) {
-      setError("Please select a date column");
-      setSuccess("");
-      return;
-    }
-    if (!noOfMonths || noOfMonths <= 0) {
-      setError(
-        "Please enter a valid number of months and it should be greater than 0"
-      );
-      setSuccess("");
-      return;
-    }
-    if (!checkedState.some((state) => state)) {
-      setError("Please select at least one checkbox");
-      setSuccess("");
-      return;
-    }
-    setError("");
     setIsLoading(true);
+    setError("");
     setSuccess("");
 
+    // Only include adjustments for checked sub-features
+    const filteredAdjustments = {};
+    Object.entries(childCheckedState).forEach(([parentIndex, childMap]) => {
+      if (weightData[parentIndex]) {
+        weightData[parentIndex].forEach((item, idx) => {
+          if (childMap[idx]) {
+            filteredAdjustments[item.feature] = adjustments[item.feature];
+          }
+        });
+      }
+    });
+
     try {
-      // Initial API call
       const response = await axios.post(
-        `${baseUrl}/projects/${project_id}/time-series/analysis`,
+        `${baseUrl}/run-time-series-forecast/`,
         {
-          path: clusterHistory[0].path,
+          project_id: project_id,
+          subfolder: "other_files",
           kpi: activeKPI,
           no_of_months: Number(noOfMonths),
-          date_column: dateColumn,
-          adjustments: adjustments,
-          regressors: regressors,
+          adjustments: filteredAdjustments,
         },
         {
           headers: {
@@ -128,75 +458,25 @@ const Workbench = () => {
         }
       );
 
-      const { task_id } = response.data;
-
-      // Function to check task status
-      const checkStatus = async () => {
-        try {
-          const statusResponse = await axios.get(
-            `${baseUrl}/projects/tasks/${task_id}/status`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-            }
-          );
-          return statusResponse.data.status;
-        } catch (error) {
-          console.error("Error checking status:", error);
-          throw error;
-        }
-      };
-
-      // Poll status until SUCCESS
-      const pollStatus = async () => {
-        return new Promise((resolve, reject) => {
-          const interval = setInterval(async () => {
-            try {
-              const status = await checkStatus();
-              if (status === "SUCCESS") {
-                clearInterval(interval);
-                // Get the analysis results
-                const analysisResponse = await axios.post(
-                  `${baseUrl}/projects/${project_id}/time-series/figure`,
-                  {
-                    kpi: activeKPI,
-                    path: clusterHistory[0].path,
-                  },
-                  {
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                  }
-                );
-                setPlotData(
-                  JSON.parse(analysisResponse.data.plotly_figure).data
-                );
-                setPlotLayout(
-                  JSON.parse(analysisResponse.data.plotly_figure).layout
-                );
-                setIsPopupVisible(true);
-                setSuccess("Time series analysis completed successfully!");
-                resolve(analysisResponse.data.plotly_figure);
-              } else if (status === "FAILURE") {
-                clearInterval(interval);
-                setError("Analysis task failed. Please try again.");
-                reject(new Error("Analysis task failed"));
-              }
-            } catch (error) {
-              clearInterval(interval);
-              setError("Error in time series analysis. Please try again.");
-              reject(error);
-            }
-          }, 1000); // Check every second
+      if (response.data && response.data.data && response.data.layout) {
+        setSuccess("Projection generated successfully!");
+        navigate(`/${com_id}/projects/${project_id}/projection`, {
+          state: { plotlyGraph: response.data },
         });
-      };
-
-      // Start polling and wait for results
-      await pollStatus();
+      } else {
+        throw new Error("Invalid response format from forecast API");
+      }
     } catch (error) {
-      console.error("Error in time series analysis:", error);
-      setError("Failed to complete time series analysis. Please try again.");
+      console.error(
+        "Error generating projection:",
+        error,
+        error?.response?.data
+      );
+      setError(
+        error.response?.data?.message ||
+          error.response?.data?.detail ||
+          "Failed to generate projection. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -206,190 +486,59 @@ const Workbench = () => {
     setIsPopupVisible(false);
   };
 
-  const handleCheckboxChange = (index, isChild = false, parentIndex = null) => {
-    if (isChild) {
-      // Handle child checkbox
-      const newChildCheckedState = {
-        ...childCheckedState,
-        [parentIndex]: {
-          ...childCheckedState[parentIndex],
-          [index]: !childCheckedState[parentIndex]?.[index],
-        },
-      };
-      setChildCheckedState(newChildCheckedState);
-
-      const feature = weightData[parentIndex][index].feature;
-      setAdjustments((prev) => {
-        const newAdjustments = { ...prev };
-        if (!childCheckedState[parentIndex]?.[index]) {
-          // If it's being checked, add an empty value
-          newAdjustments[feature] = "";
-        } else {
-          // If it's being unchecked, remove the value
-          delete newAdjustments[feature];
-        }
-        return newAdjustments;
-      });
-    } else {
-      // Handle parent checkbox
-      const updatedCheckedState = [...checkedState];
-      updatedCheckedState[index] = !updatedCheckedState[index];
-      setCheckedState(updatedCheckedState);
-
-      // Clear adjustments for this parent if unchecked
-      if (!updatedCheckedState[index]) {
-        const feature =
-          typeof clusterHistory[index].value === "number"
-            ? clusterHistory[index].feature
-            : clusterHistory[index].value;
-
-        setAdjustments((prev) => {
-          const newAdjustments = { ...prev };
-          delete newAdjustments[feature];
-
-          // Also clear child adjustments if they exist
-          if (weightData[index]) {
-            weightData[index].forEach((item) => {
-              delete newAdjustments[item.feature];
-            });
-          }
-          return newAdjustments;
-        });
-
-        // Clear child checked states
-        setChildCheckedState((prev) => {
-          const newState = { ...prev };
-          delete newState[index];
-          return newState;
-        });
-
-        // Collapse the section
-        setExpandedSections((prev) => {
-          const newState = { ...prev };
-          delete newState[index];
-          return newState;
-        });
-      }
-    }
-  };
-
-  const handleInputChange = (
-    index,
-    value,
-    isChild = false,
-    parentIndex = null
-  ) => {
-    let feature;
-    if (isChild) {
-      feature = weightData[parentIndex][index].feature;
-    } else {
-      feature =
-        typeof clusterHistory[index].value === "number"
-          ? clusterHistory[index].feature
-          : clusterHistory[index].value;
-    }
-
-    setAdjustments((prev) => ({
-      ...prev,
-      [feature]: value,
-    }));
-  };
-
   const handleOneHotEncoding = async (index) => {
     setLoadingIndex(index);
     setError("");
     setSuccess("");
 
-    try {
-      // Initial API call
-      const response = await axios.post(
-        `${baseUrl}/projects/${project_id}/features/onehot`,
-        {
-          path: clusterHistory[index].path,
-          kpi:
-            typeof clusterHistory[index].value === "number"
-              ? clusterHistory[index].feature
-              : clusterHistory[index].value,
-        }
+    // Robust column matching: always use the exact column name from columns
+    const targetFeature = displayClusterHistory[index].feature;
+    const actualColumn = columns.find(
+      (col) =>
+        col.trim().toLowerCase() === (targetFeature || "").trim().toLowerCase()
+    );
+
+    if (!actualColumn) {
+      setError(
+        `Target column '${targetFeature}' not found in available columns. Please check your data.`
       );
+      setLoadingIndex(null);
+      return;
+    }
 
-      const { task_id } = response.data;
+    // Log for debugging
+    console.log("actualColumn:", actualColumn, "type:", typeof actualColumn);
 
-      // Function to check task status
-      const checkStatus = async () => {
-        try {
-          const statusResponse = await axios.get(
-            `${baseUrl}/projects/tasks/${task_id}/status`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-            }
-          );
+    try {
+      const response = await axios.get(`${baseUrl}/feature-ranking/`, {
+        params: {
+          project_id: project_id,
+          target_col: actualColumn, // always send the exact column name
+        },
+      });
 
-          return statusResponse.data.status;
-        } catch (error) {
-          console.error("Error checking status:", error);
-          throw error;
-        }
-      };
+      if (response.data && response.data.top_5_feature_importances) {
+        setWeightData((prevState) => ({
+          ...prevState,
+          [index]: response.data.top_5_feature_importances,
+        }));
 
-      // Poll status until SUCCESS
-      const pollStatus = async () => {
-        return new Promise((resolve, reject) => {
-          const interval = setInterval(async () => {
-            try {
-              const status = await checkStatus();
-              if (status === "SUCCESS") {
-                clearInterval(interval);
-                // Make the final API call
-                const weightResponse = await axios.post(
-                  `${baseUrl}/projects/${project_id}/features/weight/onehot`,
-                  {
-                    path: clusterHistory[index].path,
-                    kpi:
-                      typeof clusterHistory[index].value === "number"
-                        ? clusterHistory[index].feature
-                        : clusterHistory[index].value,
-                  },
-                  {
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                  }
-                );
-                setWeightData((prevState) => ({
-                  ...prevState,
-                  [index]: weightResponse.data.slice(0, 5),
-                }));
+        setExpandedSections((prev) => ({
+          ...prev,
+          [index]: true,
+        }));
 
-                // Expand the section
-                setExpandedSections((prev) => ({
-                  ...prev,
-                  [index]: true,
-                }));
-
-                setSuccess("One-hot encoding completed successfully!");
-                resolve(weightResponse.data);
-              } else if (status === "FAILURE") {
-                clearInterval(interval);
-                setError("One-hot encoding task failed. Please try again.");
-                reject(new Error("Task failed"));
-              }
-            } catch (error) {
-              clearInterval(interval);
-              setError("Error in one-hot encoding process. Please try again.");
-              reject(error);
-            }
-          }, 1000); // Check every second
-        });
-      };
-
-      // Start polling
-      await pollStatus();
+        setSuccess("Feature ranking completed successfully!");
+      } else {
+        throw new Error("Invalid response format from feature ranking API");
+      }
     } catch (error) {
-      console.error("Error in OneHot encoding process:", error);
-      setError("Failed to complete one-hot encoding. Please try again.");
+      console.error("Error in feature ranking:", error, error?.response?.data);
+      setError(
+        error.response?.data?.message ||
+          error.response?.data?.detail ||
+          "Failed to get feature ranking. Please try again."
+      );
     } finally {
       setLoadingIndex(null);
     }
@@ -399,6 +548,62 @@ const Workbench = () => {
     setExpandedSections((prev) => ({
       ...prev,
       [index]: !prev[index],
+    }));
+  };
+
+  // Show fallback UI if no cluster journey data is available
+  if (!storedClusterJourney || storedClusterJourney.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+          <div className="flex items-center gap-3 text-yellow-500 mb-4">
+            <Info className="h-6 w-6" />
+            <h2 className="text-lg font-semibold">No Data Available</h2>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            No cluster journey data is available. Please go back to the
+            clustering page and create some segments.
+          </p>
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                // Ensure we have the required state data
+                const stateData = {
+                  activeKPI: activeKPI || "",
+                  kpiList: kpiList || [],
+                  importantColumnNames: importantColumnNames || [],
+                  project_id: project_id,
+                };
+                navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
+                  state: stateData,
+                });
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+            >
+              Go Back to Clustering
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Handler for sub-feature (child) checkboxes
+  const handleChildCheckboxChange = (parentIndex, childIndex) => {
+    setChildCheckedState((prev) => ({
+      ...prev,
+      [parentIndex]: {
+        ...prev[parentIndex],
+        [childIndex]: !prev[parentIndex]?.[childIndex],
+      },
+    }));
+  };
+
+  // Handler for sub-feature (child) input changes
+  const handleChildInputChange = (parentIndex, childIndex, feature, value) => {
+    setAdjustments((prev) => ({
+      ...prev,
+      [feature]: value,
     }));
   };
 
@@ -415,7 +620,13 @@ const Workbench = () => {
           <div className="flex items-center gap-3">
             <motion.button
               onClick={() =>
-                navigate(`/${com_id}/projects/${project_id}/clustered-data`)
+                navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
+                  state: {
+                    activeKPI,
+                    kpiList,
+                    importantColumnNames,
+                  },
+                })
               }
               className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"
               whileHover={{ scale: 1.05 }}
@@ -447,7 +658,7 @@ const Workbench = () => {
 
           <div className="overflow-x-auto">
             <div className="flex items-center space-x-4 min-w-max">
-              {clusterHistory.map((cluster, index) => (
+              {displayClusterHistory.map((cluster, index) => (
                 <React.Fragment key={index}>
                   <motion.div
                     whileHover={{ y: -5 }}
@@ -494,13 +705,109 @@ const Workbench = () => {
                       </div>
                     </div>
                   </motion.div>
-                  {index < clusterHistory.length - 1 && (
+                  {index < displayClusterHistory.length - 1 && (
                     <div className="flex-shrink-0">
                       <ArrowRight className="h-6 w-6 text-gray-400 dark:text-gray-600" />
                     </div>
                   )}
                 </React.Fragment>
               ))}
+            </div>
+          </div>
+
+          {/* Date Column Selection */}
+          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Date Column
+                </label>
+                <select
+                  value={dateColumn}
+                  onChange={(e) => setDateColumn(e.target.value)}
+                  className="border rounded px-3 py-2 w-full text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
+                  disabled={isLoading}
+                >
+                  <option value="">Select a date column</option>
+                  {columns && columns.length > 0 ? (
+                    columns.map((column, index) => (
+                      <option key={index} value={column}>
+                        {column}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      {error ? "Error loading columns" : "Loading columns..."}
+                    </option>
+                  )}
+                </select>
+                {error && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                    {error}
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <motion.button
+                  onClick={async () => {
+                    if (!dateColumn) {
+                      setError("Please select a date column");
+                      return;
+                    }
+
+                    try {
+                      setIsLoading(true);
+                      setError("");
+                      setSuccess("");
+
+                      const response = await axios.get(
+                        `${baseUrl}/run-pipeline/`,
+                        {
+                          params: {
+                            project_id: project_id,
+                            kpi_col: activeKPI,
+                            date_col: dateColumn,
+                          },
+                        }
+                      );
+
+                      if (response.data) {
+                        setSuccess("Pipeline started successfully!");
+                        // You can add additional logic here based on the response
+                        console.log("Pipeline response:", response.data);
+                      }
+                    } catch (error) {
+                      console.error("Error running pipeline:", error);
+                      setError(
+                        error.response?.data?.message ||
+                          "Failed to run pipeline. Please try again."
+                      );
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  className={`px-6 py-2 bg-indigo-600 text-white rounded-lg transition-colors flex items-center gap-2 ${
+                    isLoading
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-indigo-700"
+                  }`}
+                  whileHover={isLoading ? {} : { scale: 1.05 }}
+                  whileTap={isLoading ? {} : { scale: 0.95 }}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrendingUp className="h-4 w-4" />
+                      <span>Proceed</span>
+                    </>
+                  )}
+                </motion.button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -534,7 +841,7 @@ const Workbench = () => {
                 </tr>
               </thead>
               <tbody>
-                {clusterHistory.map((cluster, index) => (
+                {displayClusterHistory.map((cluster, index) => (
                   <React.Fragment key={index}>
                     <tr className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="py-3 px-4">
@@ -682,10 +989,9 @@ const Workbench = () => {
                                               type="checkbox"
                                               checked={isChecked}
                                               onChange={() =>
-                                                handleCheckboxChange(
-                                                  idx,
-                                                  true,
-                                                  index
+                                                handleChildCheckboxChange(
+                                                  index,
+                                                  idx
                                                 )
                                               }
                                               className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-indigo-400"
@@ -707,11 +1013,11 @@ const Workbench = () => {
                                                 adjustments[item.feature] || ""
                                               }
                                               onChange={(e) =>
-                                                handleInputChange(
+                                                handleChildInputChange(
+                                                  index,
                                                   idx,
-                                                  e.target.value,
-                                                  true,
-                                                  index
+                                                  item.feature,
+                                                  e.target.value
                                                 )
                                               }
                                               placeholder="New value"
@@ -744,7 +1050,7 @@ const Workbench = () => {
             Time Series Configuration
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Number of Months to Predict
@@ -758,25 +1064,6 @@ const Workbench = () => {
                 className="border rounded px-3 py-2 w-full text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
                 disabled={isLoading}
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Date Column
-              </label>
-              <select
-                value={dateColumn}
-                onChange={(e) => setDateColumn(e.target.value)}
-                className="border rounded px-3 py-2 w-full text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
-                disabled={isLoading}
-              >
-                <option value="">Select a date column</option>
-                {columns.map((column, index) => (
-                  <option key={index} value={column}>
-                    {column}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </motion.div>
@@ -866,7 +1153,7 @@ const Workbench = () => {
                 <div className="flex items-center gap-2">
                   <motion.button
                     onClick={() => {
-                      navigate(`/projects/${project_id}/projection`, {
+                      navigate(`/${com_id}/projects/${project_id}/projection`, {
                         state: {
                           timeSeriesFigure: {
                             plotly_figure: JSON.stringify({

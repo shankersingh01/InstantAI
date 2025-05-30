@@ -25,7 +25,7 @@ const AppBar = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [user, setUser] = useState(null);
+  const [user] = useState(null);
 
   // Handle scroll effect
   useEffect(() => {
@@ -83,7 +83,13 @@ const AppBar = () => {
   const navItems = [
     { name: "Home", path: "/", icon: Home },
     { name: "Configurations", path: "/configuration", icon: Settings },
-    { name: "Projection", path: "/projection-home", icon: Layers },
+    {
+      name: "Projection",
+      path: `/${localStorage.getItem("com_id")}/projects/${localStorage.getItem(
+        "project_id"
+      )}/projection`,
+      icon: Layers,
+    },
   ];
 
   return (
