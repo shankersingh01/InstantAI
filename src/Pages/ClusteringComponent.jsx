@@ -36,7 +36,6 @@ const ClusteringComponent = () => {
   const [newkpi, setNewkpi] = useState(
     activeKPI || (kpiList && kpiList.length > 0 ? kpiList[0] : "")
   );
-  const [extractedClusters, setExtractedClusters] = useState([]);
   const [journey, setJourney] = useState([]);
   const [currentSelectionIndex, setCurrentSelectionIndex] = useState(-1); // -1 means root
   const [error, setError] = useState(null);
@@ -66,13 +65,10 @@ const ClusteringComponent = () => {
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
   const [definitionAbsZScore, setDefinitionAbsZScore] = useState(null);
-  const [definitionClusterDef, setDefinitionClusterDef] = useState(null);
-  const [isRestoring, setIsRestoring] = useState(true);
+  const [numericalCellSelection, setNumericalCellSelection] = useState({}); // key: `${feature}-${clusterIndex}`
 
   // Ref to track if processData has been called for the current project and KPI
   const processCalledRef = React.useRef({});
-  // Ref to track the last index for which updateClusterJourney was called
-  const lastUpdatedRef = React.useRef({}); // Use an object to store project_id and index
 
   // Fetch and restore project state on mount
   useEffect(() => {
@@ -121,8 +117,6 @@ const ClusteringComponent = () => {
           if (journeyResponse.data && journeyResponse.data.cluster_journey) {
             const savedJourney = journeyResponse.data.cluster_journey;
             console.log("Restoring saved journey:", savedJourney);
-            setIsRestoring(true); // Set restoring before updating journey
-            // Update local state
             setJourney(savedJourney);
             setCurrentSelectionIndex(savedJourney.length - 1);
 
@@ -138,7 +132,6 @@ const ClusteringComponent = () => {
             if (savedJourney.length > 0) {
               setCurrentLevel(savedJourney[savedJourney.length - 1].level + 1);
             }
-            setIsRestoring(false); // Set restoring to false after restore
           }
 
           // If clusters exist, use them directly
@@ -149,7 +142,6 @@ const ClusteringComponent = () => {
             const rootCluster = projectData.clusters[kpi];
             if (rootCluster && rootCluster.children) {
               setGroupedClusters(transformClusterData(rootCluster.children));
-              setExtractedClusters(rootCluster.children);
             }
             setLoading(false);
           } else if (newkpi && project_id) {
@@ -282,7 +274,6 @@ const ClusteringComponent = () => {
         const transformedData = transformClusterData(currentLevelClusters);
         setGroupedClusters(transformedData);
 
-        setExtractedClusters(currentLevelClusters);
         dispatch(setClusters({ [kpi]: currentLevelClusters }));
         setLoading(false);
       } else {
@@ -333,8 +324,54 @@ const ClusteringComponent = () => {
   };
 
   const handleCellClick = (feature, clusterIndex, value) => {
-    setSelectedCell({ feature, clusterIndex, currentLevel, value });
-    setSelectedClusterIndex(clusterIndex); //for cell selection and analyze it
+    // If value is already in 'Label - Percentage' format (from dropdown), use as-is
+    let displayValue = value;
+    let percentage = undefined;
+
+    // For numerical columns, check if user selected mean or sum
+    const key = `${feature}-${clusterIndex}`;
+    if (groupedClusters.mean?.[feature]?.[clusterIndex]?.original) {
+      const mean = groupedClusters.mean[feature][clusterIndex].original.Mean;
+      // Get sum from the actual cluster data
+      const sum =
+        currentClusters[clusterIndex]?.analysis?.[feature]?.segment?.sum;
+      // Debug log
+      console.log("Cell click values:", {
+        mean,
+        sum,
+        selectedValue: numericalCellSelection[key],
+      });
+      displayValue = numericalCellSelection[key] === "sum" ? sum : mean;
+    }
+
+    // Handle categorical columns
+    if (
+      typeof value === "string" &&
+      !value.includes(" - ") &&
+      groupedClusters.top1?.[feature]?.[clusterIndex]?.original &&
+      groupedClusters.top1[feature][clusterIndex].original.Value !== undefined
+    ) {
+      const original = groupedClusters.top1[feature][clusterIndex].original;
+      if (original.Value && original.Percentage !== undefined) {
+        displayValue = `${original.Value} - ${original.Percentage}`;
+        percentage = original.Percentage;
+      }
+    } else if (typeof value === "string" && value.includes(" - ")) {
+      // Try to extract percentage if present
+      const parts = value.split(" - ");
+      if (parts.length === 2) {
+        percentage = parts[1];
+      }
+    }
+
+    setSelectedCell({
+      feature,
+      clusterIndex,
+      currentLevel,
+      value: displayValue,
+      percentage,
+    });
+    setSelectedClusterIndex(clusterIndex);
     setOpenDropdowns({});
   };
 
@@ -377,44 +414,12 @@ const ClusteringComponent = () => {
       dispatch(setClusterHistory(newJourney));
       dispatch(setSelectedIndex(nextSelectionIndex));
 
-      // Trigger updateClusterJourney here, guarded by the ref
-      // REMOVED: Moving API call logic back to a useEffect
-      /*
-      const currentJourneyKey = `${project_id}-${nextSelectionIndex}`;
-      if (lastUpdatedRef.current.key !== currentJourneyKey) {
-         console.log("Analyzing new segment, triggering API call...");
-         updateClusterJourney(newJourney, nextSelectionIndex);
-         lastUpdatedRef.current = { key: currentJourneyKey }; // Update ref with the new key
-      }
-      */
-
-      // Update table view based on the new journey path (this part should already be handled by useEffect)
-      // Removing the explicit table view update here to avoid potential conflicts
-      // const newNode = getClusterByPath(clusterTree[newkpi], pathIndices);
-      // if (newNode && newNode.children) {
-      //   setGroupedClusters(transformClusterData(newNode.children));
-      // }
+      // Call updateClusterJourney directly here (user-initiated)
+      updateClusterJourney(newJourney, nextSelectionIndex);
 
       setSelectedClusterIndex(null);
     }
   };
-
-  // Trigger updateClusterJourney when the journey is updated after Analyze click
-  useEffect(() => {
-    // Only update if journey is not empty and the selection index is the last element
-    // Also, only call if the current journey state hasn't been updated yet
-    if (isRestoring) return; // Prevent API call during restore
-    const currentJourneyKey = `${project_id}-${currentSelectionIndex}`;
-    if (
-      journey.length > 0 &&
-      currentSelectionIndex === journey.length - 1 &&
-      lastUpdatedRef.current.key !== currentJourneyKey
-    ) {
-      console.log("Journey state finalized, triggering API call...");
-      updateClusterJourney(journey, currentSelectionIndex);
-      lastUpdatedRef.current = { key: currentJourneyKey }; // Update the ref after successful call
-    }
-  }, [journey, currentSelectionIndex, project_id, isRestoring]); // Add isRestoring as dependency
 
   const updateClusterJourney = async (journey, selectionIndex) => {
     try {
@@ -466,12 +471,10 @@ const ClusteringComponent = () => {
         const node = getClusterByPath(rootCluster, pathIndices);
         if (node && node.children) {
           setGroupedClusters(transformClusterData(node.children));
-          setExtractedClusters(node.children);
         }
       } else if (rootCluster && rootCluster.children) {
         // If no journey, show root cluster
         setGroupedClusters(transformClusterData(rootCluster.children));
-        setExtractedClusters(rootCluster.children);
       }
     }
   }, [journey, clusterTree, newkpi]);
@@ -490,7 +493,6 @@ const ClusteringComponent = () => {
         const node = getClusterByPath(rootCluster, pathIndices);
         if (node && node.children) {
           setGroupedClusters(transformClusterData(node.children));
-          setExtractedClusters(node.children);
         } else if (
           rootCluster &&
           rootCluster.children &&
@@ -498,7 +500,6 @@ const ClusteringComponent = () => {
         ) {
           // If journey is empty after restore, show root cluster
           setGroupedClusters(transformClusterData(rootCluster.children));
-          setExtractedClusters(rootCluster.children);
         }
       }
     }
@@ -628,6 +629,10 @@ const ClusteringComponent = () => {
       setError("Failed to download CSV", err);
     }
   };
+
+  // Determine if the current level is already analyzed
+  const isLevelAnalyzed =
+    journey.length > 0 && currentSelectionIndex < journey.length - 1;
 
   if (!project_id || !location.state) {
     return (
@@ -883,18 +888,103 @@ const ClusteringComponent = () => {
                                   {feature}
                                 </td>
                                 {currentClusters.map((_, clusterIndex) => {
-                                  const value =
+                                  // For categorical columns
+                                  if (
                                     groupedClusters.top1?.[feature]?.[
                                       clusterIndex
-                                    ]?.original?.Value ??
+                                    ]?.original
+                                  ) {
+                                    const value =
+                                      groupedClusters.top1[feature][
+                                        clusterIndex
+                                      ].original.Value;
+                                    const percentage =
+                                      groupedClusters.top1[feature][
+                                        clusterIndex
+                                      ].original.Percentage;
+                                    return (
+                                      <td
+                                        key={clusterIndex}
+                                        className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                          selectedCell?.feature === feature &&
+                                          selectedCell?.clusterIndex ===
+                                            clusterIndex
+                                            ? "bg-indigo-100"
+                                            : ""
+                                        } ${
+                                          isLevelAnalyzed
+                                            ? "cursor-not-allowed opacity-50"
+                                            : ""
+                                        }`}
+                                        onClick={
+                                          isLevelAnalyzed
+                                            ? undefined
+                                            : () =>
+                                                handleCellClick(
+                                                  feature,
+                                                  clusterIndex,
+                                                  value
+                                                )
+                                        }
+                                      >
+                                        <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                          {value}
+                                          {percentage !== undefined && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                              - {percentage}{" "}
+                                              <span
+                                                className="pl-4"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  toggleDropdown(
+                                                    e,
+                                                    feature,
+                                                    clusterIndex
+                                                  );
+                                                }}
+                                              >
+                                                ▼
+                                              </span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        {openDropdowns[
+                                          `${feature}-${clusterIndex}`
+                                        ] && (
+                                          <ClusterDropdown
+                                            groupedClusters={groupedClusters}
+                                            feature={feature}
+                                            handleCellClick={handleCellClick}
+                                            toggleDropdown={toggleDropdown}
+                                            clusterIndex={clusterIndex}
+                                            analysis={
+                                              currentClusters[clusterIndex]
+                                                ?.analysis?.[feature]
+                                            }
+                                          />
+                                        )}
+                                      </td>
+                                    );
+                                  }
+
+                                  // For numerical columns
+                                  const mean =
                                     groupedClusters.mean?.[feature]?.[
                                       clusterIndex
-                                    ]?.original?.Mean ??
-                                    0;
-                                  const percentage =
-                                    groupedClusters.top1[feature]?.[
+                                    ]?.original?.Mean;
+                                  const sum =
+                                    currentClusters[clusterIndex]?.analysis?.[
+                                      feature
+                                    ]?.segment?.sum;
+                                  const count =
+                                    groupedClusters.mean?.[feature]?.[
                                       clusterIndex
-                                    ]?.original?.Percentage;
+                                    ]?.original?.Count;
+                                  const key = `${feature}-${clusterIndex}`;
+                                  const selectedValue =
+                                    numericalCellSelection[key] || "mean";
+                                  const displayValue =
+                                    selectedValue === "sum" ? sum : mean;
                                   return (
                                     <td
                                       key={clusterIndex}
@@ -904,50 +994,71 @@ const ClusteringComponent = () => {
                                           clusterIndex
                                           ? "bg-indigo-100"
                                           : ""
+                                      } ${
+                                        isLevelAnalyzed
+                                          ? "cursor-not-allowed opacity-50"
+                                          : ""
                                       }`}
-                                      onClick={() =>
-                                        handleCellClick(
-                                          feature,
-                                          clusterIndex,
-                                          value
-                                        )
+                                      onClick={
+                                        isLevelAnalyzed
+                                          ? undefined
+                                          : () =>
+                                              handleCellClick(
+                                                feature,
+                                                clusterIndex,
+                                                displayValue
+                                              )
                                       }
                                     >
-                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
-                                        {typeof value === "number" &&
-                                        !isNaN(value)
-                                          ? formatIndianNumber(value)
-                                          : value}
-                                        {percentage !== undefined && (
+                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
+                                        {typeof displayValue === "number" &&
+                                        !isNaN(displayValue)
+                                          ? formatIndianNumber(displayValue)
+                                          : displayValue}
+                                        {count !== undefined && (
                                           <span className="ml-2 text-sm text-gray-500">
-                                            - {percentage}{" "}
-                                            <span
-                                              className="pl-4"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleDropdown(
-                                                  e,
-                                                  feature,
-                                                  clusterIndex
-                                                );
-                                              }}
-                                            >
-                                              ▼
-                                            </span>
+                                            ({formatIndianNumber(count)})
+                                          </span>
+                                        )}
+                                        {/* Dropdown for mean/sum toggle */}
+                                        <span
+                                          className="pl-4 cursor-pointer text-xs text-blue-500 underline"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setNumericalCellSelection(
+                                              (prev) => ({
+                                                ...prev,
+                                                [key]:
+                                                  selectedValue === "mean"
+                                                    ? "sum"
+                                                    : "mean",
+                                              })
+                                            );
+                                          }}
+                                        >
+                                          {selectedValue === "mean"
+                                            ? "Show Sum"
+                                            : "Show Mean"}
+                                        </span>
+                                        {/* Option to reset to original value */}
+                                        {numericalCellSelection[key] && (
+                                          <span
+                                            className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setNumericalCellSelection(
+                                                (prev) => {
+                                                  const newSel = { ...prev };
+                                                  delete newSel[key];
+                                                  return newSel;
+                                                }
+                                              );
+                                            }}
+                                          >
+                                            Reset
                                           </span>
                                         )}
                                       </div>
-                                      {openDropdowns[
-                                        `${feature}-${clusterIndex}`
-                                      ] && (
-                                        <ClusterDropdown
-                                          groupedClusters={groupedClusters}
-                                          feature={feature}
-                                          handleCellClick={handleCellClick}
-                                          toggleDropdown={toggleDropdown}
-                                          clusterIndex={clusterIndex}
-                                        />
-                                      )}
                                     </td>
                                   );
                                 })}
@@ -961,14 +1072,103 @@ const ClusteringComponent = () => {
                                   {feature}
                                 </td>
                                 {currentClusters.map((_, clusterIndex) => {
+                                  // For categorical columns
+                                  if (
+                                    groupedClusters.top1?.[feature]?.[
+                                      clusterIndex
+                                    ]?.original
+                                  ) {
+                                    const value =
+                                      groupedClusters.top1[feature][
+                                        clusterIndex
+                                      ].original.Value;
+                                    const percentage =
+                                      groupedClusters.top1[feature][
+                                        clusterIndex
+                                      ].original.Percentage;
+                                    return (
+                                      <td
+                                        key={clusterIndex}
+                                        className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                          selectedCell?.feature === feature &&
+                                          selectedCell?.clusterIndex ===
+                                            clusterIndex
+                                            ? "bg-indigo-100"
+                                            : ""
+                                        } ${
+                                          isLevelAnalyzed
+                                            ? "cursor-not-allowed opacity-50"
+                                            : ""
+                                        }`}
+                                        onClick={
+                                          isLevelAnalyzed
+                                            ? undefined
+                                            : () =>
+                                                handleCellClick(
+                                                  feature,
+                                                  clusterIndex,
+                                                  value
+                                                )
+                                        }
+                                      >
+                                        <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                          {value}
+                                          {percentage !== undefined && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                              - {percentage}{" "}
+                                              <span
+                                                className="pl-4"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  toggleDropdown(
+                                                    e,
+                                                    feature,
+                                                    clusterIndex
+                                                  );
+                                                }}
+                                              >
+                                                ▼
+                                              </span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        {openDropdowns[
+                                          `${feature}-${clusterIndex}`
+                                        ] && (
+                                          <ClusterDropdown
+                                            groupedClusters={groupedClusters}
+                                            feature={feature}
+                                            handleCellClick={handleCellClick}
+                                            toggleDropdown={toggleDropdown}
+                                            clusterIndex={clusterIndex}
+                                            analysis={
+                                              currentClusters[clusterIndex]
+                                                ?.analysis?.[feature]
+                                            }
+                                          />
+                                        )}
+                                      </td>
+                                    );
+                                  }
+
+                                  // For numerical columns
                                   const mean =
                                     groupedClusters.mean?.[feature]?.[
                                       clusterIndex
                                     ]?.original?.Mean;
+                                  const sum =
+                                    currentClusters[clusterIndex]?.analysis?.[
+                                      feature
+                                    ]?.segment?.sum;
                                   const count =
                                     groupedClusters.mean?.[feature]?.[
                                       clusterIndex
                                     ]?.original?.Count;
+                                  const key = `${feature}-${clusterIndex}`;
+                                  const selectedValue =
+                                    numericalCellSelection[key] || "mean";
+                                  const displayValue =
+                                    selectedValue === "sum" ? sum : mean;
                                   return (
                                     <td
                                       key={clusterIndex}
@@ -978,23 +1178,68 @@ const ClusteringComponent = () => {
                                           clusterIndex
                                           ? "bg-indigo-100"
                                           : ""
+                                      } ${
+                                        isLevelAnalyzed
+                                          ? "cursor-not-allowed opacity-50"
+                                          : ""
                                       }`}
-                                      onClick={() =>
-                                        handleCellClick(
-                                          feature,
-                                          clusterIndex,
-                                          mean
-                                        )
+                                      onClick={
+                                        isLevelAnalyzed
+                                          ? undefined
+                                          : () =>
+                                              handleCellClick(
+                                                feature,
+                                                clusterIndex,
+                                                displayValue
+                                              )
                                       }
                                     >
-                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors">
-                                        {typeof mean === "number" &&
-                                        !isNaN(mean)
-                                          ? formatIndianNumber(mean)
-                                          : mean}
+                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
+                                        {typeof displayValue === "number" &&
+                                        !isNaN(displayValue)
+                                          ? formatIndianNumber(displayValue)
+                                          : displayValue}
                                         {count !== undefined && (
                                           <span className="ml-2 text-sm text-gray-500">
                                             ({formatIndianNumber(count)})
+                                          </span>
+                                        )}
+                                        {/* Dropdown for mean/sum toggle */}
+                                        <span
+                                          className="pl-4 cursor-pointer text-xs text-blue-500 underline"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setNumericalCellSelection(
+                                              (prev) => ({
+                                                ...prev,
+                                                [key]:
+                                                  selectedValue === "mean"
+                                                    ? "sum"
+                                                    : "mean",
+                                              })
+                                            );
+                                          }}
+                                        >
+                                          {selectedValue === "mean"
+                                            ? "Show Sum"
+                                            : "Show Mean"}
+                                        </span>
+                                        {/* Option to reset to original value */}
+                                        {numericalCellSelection[key] && (
+                                          <span
+                                            className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setNumericalCellSelection(
+                                                (prev) => {
+                                                  const newSel = { ...prev };
+                                                  delete newSel[key];
+                                                  return newSel;
+                                                }
+                                              );
+                                            }}
+                                          >
+                                            Reset
                                           </span>
                                         )}
                                       </div>
@@ -1013,9 +1258,9 @@ const ClusteringComponent = () => {
               <div className="flex flex-wrap justify-start items-center gap-4 mt-4">
                 <button
                   onClick={handleAnalyze}
-                  disabled={selectedClusterIndex === null}
+                  disabled={selectedClusterIndex === null || isLevelAnalyzed}
                   className={`px-4 py-2 rounded ${
-                    selectedClusterIndex !== null
+                    selectedClusterIndex !== null && !isLevelAnalyzed
                       ? "bg-blue-600 text-white hover:bg-blue-700"
                       : "bg-gray-300 text-gray-500 cursor-not-allowed"
                   }`}
@@ -1047,9 +1292,7 @@ const ClusteringComponent = () => {
               setCurrentLevel(level);
               setJourney(path);
               if (cluster.children && cluster.children.length > 0) {
-                setExtractedClusters(cluster.children);
-                const transformedData = transformClusterData(cluster.children);
-                setGroupedClusters(transformedData);
+                setGroupedClusters(transformClusterData(cluster.children));
               }
             }}
           />
@@ -1071,7 +1314,6 @@ const ClusteringComponent = () => {
           <DefinationModel
             setIsOpen={setIsOpen}
             absZScore={definitionAbsZScore}
-            clusterDefinition={definitionClusterDef}
           />
         )}
         {isOpen1 && (
