@@ -875,13 +875,7 @@ const Workbench = () => {
                             onChange={(e) =>
                               handleInputChange(index, e.target.value)
                             }
-                            value={
-                              adjustments[
-                                typeof cluster.value === "number"
-                                  ? cluster.feature
-                                  : cluster.value
-                              ] || ""
-                            }
+                            value={adjustments[cluster.feature] || ""}
                             placeholder="New value"
                           />
                           {checkedState[index] && (

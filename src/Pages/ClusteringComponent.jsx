@@ -65,6 +65,9 @@ const ClusteringComponent = () => {
   const navigate = useNavigate();
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
+  const [definitionAbsZScore, setDefinitionAbsZScore] = useState(null);
+  const [definitionClusterDef, setDefinitionClusterDef] = useState(null);
+  const [isRestoring, setIsRestoring] = useState(true);
 
   // Ref to track if processData has been called for the current project and KPI
   const processCalledRef = React.useRef({});
@@ -118,7 +121,7 @@ const ClusteringComponent = () => {
           if (journeyResponse.data && journeyResponse.data.cluster_journey) {
             const savedJourney = journeyResponse.data.cluster_journey;
             console.log("Restoring saved journey:", savedJourney);
-
+            setIsRestoring(true); // Set restoring before updating journey
             // Update local state
             setJourney(savedJourney);
             setCurrentSelectionIndex(savedJourney.length - 1);
@@ -135,6 +138,7 @@ const ClusteringComponent = () => {
             if (savedJourney.length > 0) {
               setCurrentLevel(savedJourney[savedJourney.length - 1].level + 1);
             }
+            setIsRestoring(false); // Set restoring to false after restore
           }
 
           // If clusters exist, use them directly
@@ -399,6 +403,7 @@ const ClusteringComponent = () => {
   useEffect(() => {
     // Only update if journey is not empty and the selection index is the last element
     // Also, only call if the current journey state hasn't been updated yet
+    if (isRestoring) return; // Prevent API call during restore
     const currentJourneyKey = `${project_id}-${currentSelectionIndex}`;
     if (
       journey.length > 0 &&
@@ -409,7 +414,7 @@ const ClusteringComponent = () => {
       updateClusterJourney(journey, currentSelectionIndex);
       lastUpdatedRef.current = { key: currentJourneyKey }; // Update the ref after successful call
     }
-  }, [journey, currentSelectionIndex, project_id]); // Add project_id as dependency
+  }, [journey, currentSelectionIndex, project_id, isRestoring]); // Add isRestoring as dependency
 
   const updateClusterJourney = async (journey, selectionIndex) => {
     try {
@@ -422,12 +427,13 @@ const ClusteringComponent = () => {
       // We only send the newly added step(s) to append to the backend journey
       const newSteps = journey.slice(selectionIndex);
       const formattedNewSteps = newSteps.map((step) => ({
-        ...step,
-        value: String(step.value), // Convert value to string
-        level, // Always use calculated level
-        clusterIndex: Number(step.clusterIndex), // Keep clusterIndex as number
-        path: step.path.map(Number), // Convert path elements to numbers
-        percentage: step.percentage ? String(step.percentage) : undefined, // Convert percentage to string if it exists
+        clusterIndex: Number(step.clusterIndex),
+        feature: step.feature,
+        value: String(step.value),
+        level: level, // Always use calculated level
+        path: step.path ? step.path.map(Number) : [],
+        cluster: step.cluster,
+        percentage: step.percentage ? String(step.percentage) : undefined,
       }));
 
       console.log(
@@ -569,7 +575,22 @@ const ClusteringComponent = () => {
   };
 
   const handleColumnHeaderClick = (clusterIndex) => {
-    setSelectedClusterIndex(clusterIndex);
+    if (
+      clusterTree &&
+      newkpi &&
+      clusterTree[newkpi] &&
+      clusterTree[newkpi].children
+    ) {
+      const clusterNode = clusterTree[newkpi].children[clusterIndex];
+      const absZScore = clusterNode?.cluster_definition?.abs_z_score;
+      console.log("clusterNode for modal:", clusterNode);
+      console.log("abs_z_score for modal:", absZScore);
+      setDefinitionAbsZScore(absZScore || null);
+      setTimeout(() => setIsOpen(true), 0); // Ensures state is set before opening modal
+    } else {
+      setDefinitionAbsZScore(null);
+      setIsOpen(true);
+    }
   };
 
   const handleDownloadCSV = async () => {
@@ -1049,9 +1070,8 @@ const ClusteringComponent = () => {
         {isOpen && (
           <DefinationModel
             setIsOpen={setIsOpen}
-            kpi={newkpi}
-            clusterNo={selectedCluster}
-            path={journey}
+            absZScore={definitionAbsZScore}
+            clusterDefinition={definitionClusterDef}
           />
         )}
         {isOpen1 && (
