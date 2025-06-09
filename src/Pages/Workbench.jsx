@@ -23,14 +23,10 @@ import {
 import Plot from "react-plotly.js";
 
 const Workbench = () => {
-  const { clusterHistory, selectedIndex } = useSelector(
-    (state) => state.cluster
-  );
-  const currentLevel = clusterHistory[selectedIndex]?.level;
+  const { clusterHistory } = useSelector((state) => state.cluster);
   const location = useLocation();
   const navigate = useNavigate();
-  const { activeKPI, kpiList, task_id, importantColumnNames } =
-    location.state || {};
+  const { activeKPI, kpiList, importantColumnNames } = location.state || {};
   const { project_id, com_id } = useParams();
   const [storedClusterJourney, setStoredClusterJourney] = useState([]);
   const [isLoadingJourney, setIsLoadingJourney] = useState(true);
@@ -607,6 +603,17 @@ const Workbench = () => {
     }));
   };
 
+  // Add number formatting function
+  const formatIndianNumber = (value) => {
+    if (value === undefined || value === null || value === "") return "";
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    return num.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   return (
     <motion.div
       className="bg-gray-50 dark:bg-gray-900 min-h-[calc(100vh-64px)]"
@@ -681,9 +688,12 @@ const Workbench = () => {
                             Value:
                           </span>
                           <span className="font-medium text-gray-900 dark:text-gray-100">
-                            {typeof cluster.value === "number"
-                              ? cluster.value.toFixed(4)
-                              : `${cluster.value} - ${cluster.percentage}%`}
+                            {formatIndianNumber(cluster.value)}
+                            {cluster.percentage !== undefined &&
+                            cluster.percentage !== null &&
+                            cluster.percentage !== ""
+                              ? ` - ${formatIndianNumber(cluster.percentage)}%`
+                              : ""}
                           </span>
                         </p>
                         <p className="text-sm flex justify-between">
@@ -859,9 +869,12 @@ const Workbench = () => {
                         {cluster.feature || "Parameter"}
                       </td>
                       <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                        {typeof cluster.value === "number"
-                          ? cluster.value.toFixed(4)
-                          : `${cluster.value} - ${cluster.percentage}%`}
+                        {formatIndianNumber(cluster.value)}
+                        {cluster.percentage !== undefined &&
+                        cluster.percentage !== null &&
+                        cluster.percentage !== ""
+                          ? ` - ${formatIndianNumber(cluster.percentage)}%`
+                          : ""}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">

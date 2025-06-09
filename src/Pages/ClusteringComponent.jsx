@@ -66,6 +66,7 @@ const ClusteringComponent = () => {
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
   const [definitionAbsZScore, setDefinitionAbsZScore] = useState(null);
   const [numericalCellSelection, setNumericalCellSelection] = useState({}); // key: `${feature}-${clusterIndex}`
+  const [selectedDropdownValues, setSelectedDropdownValues] = useState({});
 
   // Ref to track if processData has been called for the current project and KPI
   const processCalledRef = React.useRef({});
@@ -324,40 +325,16 @@ const ClusteringComponent = () => {
   };
 
   const handleCellClick = (feature, clusterIndex, value) => {
-    // If value is already in 'Label - Percentage' format (from dropdown), use as-is
-    let displayValue = value;
+    setSelectedDropdownValues((prev) => ({
+      ...prev,
+      [`${feature}-${clusterIndex}`]: value,
+    }));
+
+    // Rest of the existing handleCellClick logic
+    const displayValue = value;
     let percentage = undefined;
 
-    // For numerical columns, check if user selected mean or sum
-    const key = `${feature}-${clusterIndex}`;
-    if (groupedClusters.mean?.[feature]?.[clusterIndex]?.original) {
-      const mean = groupedClusters.mean[feature][clusterIndex].original.Mean;
-      // Get sum from the actual cluster data
-      const sum =
-        currentClusters[clusterIndex]?.analysis?.[feature]?.segment?.sum;
-      // Debug log
-      console.log("Cell click values:", {
-        mean,
-        sum,
-        selectedValue: numericalCellSelection[key],
-      });
-      displayValue = numericalCellSelection[key] === "sum" ? sum : mean;
-    }
-
-    // Handle categorical columns
-    if (
-      typeof value === "string" &&
-      !value.includes(" - ") &&
-      groupedClusters.top1?.[feature]?.[clusterIndex]?.original &&
-      groupedClusters.top1[feature][clusterIndex].original.Value !== undefined
-    ) {
-      const original = groupedClusters.top1[feature][clusterIndex].original;
-      if (original.Value && original.Percentage !== undefined) {
-        displayValue = `${original.Value} - ${original.Percentage}`;
-        percentage = original.Percentage;
-      }
-    } else if (typeof value === "string" && value.includes(" - ")) {
-      // Try to extract percentage if present
+    if (typeof value === "string" && value.includes(" - ")) {
       const parts = value.split(" - ");
       if (parts.length === 2) {
         percentage = parts[1];
@@ -377,10 +354,7 @@ const ClusteringComponent = () => {
 
   const toggleDropdown = (e, feature, clusterIndex) => {
     e.stopPropagation();
-    setOpenDropdowns((prev) => ({
-      ...prev,
-      [`${feature}-${clusterIndex}`]: !prev[`${feature}-${clusterIndex}`],
-    }));
+    setOpenDropdowns({ [`${feature}-${clusterIndex}`]: true });
   };
 
   const handleAnalyze = () => {
@@ -906,10 +880,19 @@ const ClusteringComponent = () => {
                                       <td
                                         key={clusterIndex}
                                         className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                          selectedCell?.feature === feature &&
-                                          selectedCell?.clusterIndex ===
+                                          journey[currentLevel] &&
+                                          journey[currentLevel].feature ===
+                                            feature &&
+                                          journey[currentLevel].clusterIndex ===
                                             clusterIndex
                                             ? "bg-indigo-100"
+                                            : ""
+                                        } ${
+                                          selectedCell?.feature === feature &&
+                                          selectedCell?.clusterIndex ===
+                                            clusterIndex &&
+                                          selectedClusterIndex === clusterIndex
+                                            ? "ring-2 ring-indigo-400"
                                             : ""
                                         } ${
                                           isLevelAnalyzed
@@ -919,50 +902,59 @@ const ClusteringComponent = () => {
                                         onClick={
                                           isLevelAnalyzed
                                             ? undefined
-                                            : () =>
+                                            : () => {
+                                                setOpenDropdowns({});
                                                 handleCellClick(
                                                   feature,
                                                   clusterIndex,
                                                   value
-                                                )
+                                                );
+                                              }
                                         }
                                       >
-                                        <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
-                                          {value}
-                                          {percentage !== undefined && (
-                                            <span className="ml-2 text-sm text-gray-500">
-                                              - {percentage}{" "}
-                                              <span
-                                                className="pl-4"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  toggleDropdown(
-                                                    e,
-                                                    feature,
-                                                    clusterIndex
-                                                  );
-                                                }}
-                                              >
-                                                ▼
+                                        <div className="relative">
+                                          <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                            {value}
+                                            {percentage !== undefined && (
+                                              <span className="ml-2 text-sm text-gray-500">
+                                                - {percentage}{" "}
+                                                <span
+                                                  className="pl-4"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleDropdown(
+                                                      e,
+                                                      feature,
+                                                      clusterIndex
+                                                    );
+                                                  }}
+                                                >
+                                                  ▼
+                                                </span>
                                               </span>
-                                            </span>
+                                            )}
+                                          </div>
+                                          {openDropdowns[
+                                            `${feature}-${clusterIndex}`
+                                          ] && (
+                                            <ClusterDropdown
+                                              groupedClusters={groupedClusters}
+                                              feature={feature}
+                                              handleCellClick={handleCellClick}
+                                              toggleDropdown={toggleDropdown}
+                                              clusterIndex={clusterIndex}
+                                              analysis={
+                                                currentClusters[clusterIndex]
+                                                  ?.analysis?.[feature]
+                                              }
+                                              selectedValue={
+                                                selectedDropdownValues[
+                                                  `${feature}-${clusterIndex}`
+                                                ]
+                                              }
+                                            />
                                           )}
                                         </div>
-                                        {openDropdowns[
-                                          `${feature}-${clusterIndex}`
-                                        ] && (
-                                          <ClusterDropdown
-                                            groupedClusters={groupedClusters}
-                                            feature={feature}
-                                            handleCellClick={handleCellClick}
-                                            toggleDropdown={toggleDropdown}
-                                            clusterIndex={clusterIndex}
-                                            analysis={
-                                              currentClusters[clusterIndex]
-                                                ?.analysis?.[feature]
-                                            }
-                                          />
-                                        )}
                                       </td>
                                     );
                                   }
@@ -989,10 +981,19 @@ const ClusteringComponent = () => {
                                     <td
                                       key={clusterIndex}
                                       className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                        selectedCell?.feature === feature &&
-                                        selectedCell?.clusterIndex ===
+                                        journey[currentLevel] &&
+                                        journey[currentLevel].feature ===
+                                          feature &&
+                                        journey[currentLevel].clusterIndex ===
                                           clusterIndex
                                           ? "bg-indigo-100"
+                                          : ""
+                                      } ${
+                                        selectedCell?.feature === feature &&
+                                        selectedCell?.clusterIndex ===
+                                          clusterIndex &&
+                                        selectedClusterIndex === clusterIndex
+                                          ? "ring-2 ring-indigo-400"
                                           : ""
                                       } ${
                                         isLevelAnalyzed
@@ -1090,10 +1091,19 @@ const ClusteringComponent = () => {
                                       <td
                                         key={clusterIndex}
                                         className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                          selectedCell?.feature === feature &&
-                                          selectedCell?.clusterIndex ===
+                                          journey[currentLevel] &&
+                                          journey[currentLevel].feature ===
+                                            feature &&
+                                          journey[currentLevel].clusterIndex ===
                                             clusterIndex
                                             ? "bg-indigo-100"
+                                            : ""
+                                        } ${
+                                          selectedCell?.feature === feature &&
+                                          selectedCell?.clusterIndex ===
+                                            clusterIndex &&
+                                          selectedClusterIndex === clusterIndex
+                                            ? "ring-2 ring-indigo-400"
                                             : ""
                                         } ${
                                           isLevelAnalyzed
@@ -1145,6 +1155,11 @@ const ClusteringComponent = () => {
                                               currentClusters[clusterIndex]
                                                 ?.analysis?.[feature]
                                             }
+                                            selectedValue={
+                                              selectedDropdownValues[
+                                                `${feature}-${clusterIndex}`
+                                              ]
+                                            }
                                           />
                                         )}
                                       </td>
@@ -1173,10 +1188,19 @@ const ClusteringComponent = () => {
                                     <td
                                       key={clusterIndex}
                                       className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                        selectedCell?.feature === feature &&
-                                        selectedCell?.clusterIndex ===
+                                        journey[currentLevel] &&
+                                        journey[currentLevel].feature ===
+                                          feature &&
+                                        journey[currentLevel].clusterIndex ===
                                           clusterIndex
                                           ? "bg-indigo-100"
+                                          : ""
+                                      } ${
+                                        selectedCell?.feature === feature &&
+                                        selectedCell?.clusterIndex ===
+                                          clusterIndex &&
+                                        selectedClusterIndex === clusterIndex
+                                          ? "ring-2 ring-indigo-400"
                                           : ""
                                       } ${
                                         isLevelAnalyzed

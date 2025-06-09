@@ -9,6 +9,7 @@ const ClusterDropdown = ({
   handleCellClick,
   analysis,
   toggleDropdown,
+  selectedValue,
 }) => {
   // Animation variants
   const dropdownVariants = {
@@ -43,12 +44,18 @@ const ClusterDropdown = ({
       initial="hidden"
       animate="visible"
       exit="hidden"
-      className="z-10 mx-auto mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-md p-2"
+      className="absolute z-10 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-md p-2"
+      style={{ minWidth: "200px" }}
     >
       <motion.div className="space-y-2" variants={itemVariants}>
         {/* Top 1 Value */}
         <div
-          className="cursor-pointer p-2 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center gap-2"
+          className={`cursor-pointer p-2 rounded-md transition-colors flex items-center gap-2 ${
+            selectedValue ===
+            (top1 ? `${top1.category} - ${top1.percentage}` : "N/A")
+              ? "bg-indigo-100 dark:bg-indigo-900/30"
+              : "hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             handleCellClick(
@@ -78,7 +85,12 @@ const ClusterDropdown = ({
 
         {/* Top 2 Value */}
         <div
-          className="cursor-pointer p-2 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center gap-2"
+          className={`cursor-pointer p-2 rounded-md transition-colors flex items-center gap-2 ${
+            selectedValue ===
+            (top2 ? `${top2.category} - ${top2.percentage}` : "N/A")
+              ? "bg-indigo-100 dark:bg-indigo-900/30"
+              : "hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             handleCellClick(
@@ -108,7 +120,12 @@ const ClusterDropdown = ({
 
         {/* Least Value */}
         <div
-          className="cursor-pointer p-2 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center gap-2"
+          className={`cursor-pointer p-2 rounded-md transition-colors flex items-center gap-2 ${
+            selectedValue ===
+            (least ? `${least.category} - ${least.percentage}` : "N/A")
+              ? "bg-indigo-100 dark:bg-indigo-900/30"
+              : "hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             handleCellClick(

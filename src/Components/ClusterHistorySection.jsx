@@ -3,6 +3,17 @@ import { Clock, Layers, Target } from "lucide-react";
 import { motion } from "framer-motion";
 import { useSelector, useDispatch } from "react-redux";
 
+// Add number formatting function
+const formatIndianNumber = (value) => {
+  if (value === undefined || value === null || value === "") return "";
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 const ClusterHistorySection = ({
   journey,
   currentSelectionIndex,
@@ -59,7 +70,7 @@ const ClusterHistorySection = ({
                         <span className="text-xs text-gray-500">
                           Value:{" "}
                           <span className="font-medium text-gray-700 dark:text-gray-200">
-                            {item.value}
+                            {formatIndianNumber(item.value)}
                           </span>
                         </span>
                       )}
