@@ -30,6 +30,22 @@ const Projection = () => {
   const [success, setSuccess] = useState("");
   const baseUrl = import.meta.env.VITE_BASE_URL;
 
+  // Get state data from location
+  const { plotlyGraph, activeKPI, kpiList, importantColumnNames } =
+    location.state || {};
+
+  // Function to handle back navigation
+  const handleBackNavigation = () => {
+    navigate(`/${com_id}/projects/${project_id}/workbench`, {
+      state: {
+        activeKPI,
+        kpiList,
+        importantColumnNames,
+        project_id,
+      },
+    });
+  };
+
   // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -134,9 +150,7 @@ const Projection = () => {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <motion.button
-              onClick={() =>
-                navigate(`/${com_id}/projects/${project_id}/workbench`)
-              }
+              onClick={handleBackNavigation}
               className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}

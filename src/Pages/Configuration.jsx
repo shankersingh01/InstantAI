@@ -1485,10 +1485,16 @@ function ConfigurationContent() {
                           options={columns
                             .filter((col) => !droppedNames.includes(col.name))
                             .map((col) => ({ value: col.id, label: col.name }))}
-                          value={droppedColumns.map((id) => ({
-                            value: id,
-                            label: columns.find((col) => col.id === id)?.name,
-                          }))}
+                          value={droppedColumns
+                            .map((id) => {
+                              const column = columns.find(
+                                (col) => col.id === id
+                              );
+                              return column
+                                ? { value: id, label: column.name }
+                                : null;
+                            })
+                            .filter(Boolean)}
                           onChange={(selected) => {
                             setDroppedColumns(
                               selected.map((option) => option.value)
@@ -1502,41 +1508,18 @@ function ConfigurationContent() {
                           }
                           menuPosition="fixed"
                           styles={{
-                            control: (base) => ({
+                            control: (base, state) => ({
                               ...base,
-                              borderRadius: "0.5rem",
-                              borderColor: "rgb(209 213 219)",
-                              boxShadow: "none",
+                              backgroundColor: "white",
+                              borderColor: state.isFocused
+                                ? "rgb(79 70 229)"
+                                : "rgb(209 213 219)",
+                              boxShadow: state.isFocused
+                                ? "0 0 0 1px rgb(79 70 229)"
+                                : "none",
                               "&:hover": {
                                 borderColor: "rgb(79 70 229)",
                               },
-                              padding: "2px",
-                              backgroundColor: "transparent",
-                            }),
-                            multiValue: (base) => ({
-                              ...base,
-                              backgroundColor: "rgb(238 242 255)",
-                              borderRadius: "0.375rem",
-                            }),
-                            multiValueLabel: (base) => ({
-                              ...base,
-                              color: "rgb(67 56 202)",
-                              fontWeight: 500,
-                            }),
-                            multiValueRemove: (base) => ({
-                              ...base,
-                              color: "rgb(67 56 202)",
-                              ":hover": {
-                                backgroundColor: "rgb(224 231 255)",
-                                color: "rgb(79 70 229)",
-                              },
-                            }),
-                            menu: (base) => ({
-                              ...base,
-                              borderRadius: "0.5rem",
-                              overflow: "hidden",
-                              boxShadow:
-                                "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
                             }),
                             option: (base, state) => ({
                               ...base,
@@ -1552,16 +1535,33 @@ function ConfigurationContent() {
                                   : "rgb(224 231 255)",
                               },
                             }),
-                            menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                            multiValue: (base) => ({
+                              ...base,
+                              backgroundColor: "rgb(238 242 255)",
+                              borderRadius: "0.375rem",
+                            }),
+                            multiValueLabel: (base) => ({
+                              ...base,
+                              color: "rgb(79 70 229)",
+                              fontWeight: 500,
+                            }),
+                            multiValueRemove: (base) => ({
+                              ...base,
+                              color: "rgb(79 70 229)",
+                              ":hover": {
+                                backgroundColor: "rgb(224 231 255)",
+                                color: "rgb(67 56 202)",
+                              },
+                            }),
                           }}
                           theme={(theme) => ({
                             ...theme,
                             colors: {
                               ...theme.colors,
                               primary: "rgb(79 70 229)",
-                              primary75: "rgb(99 102 241)",
-                              primary50: "rgb(129 140 248)",
-                              primary25: "rgb(224 231 255)",
+                              primary75: "rgb(67 56 202)",
+                              primary50: "rgb(99 102 241)",
+                              primary25: "rgb(238 242 255)",
                             },
                           })}
                         />

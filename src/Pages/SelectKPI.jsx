@@ -185,6 +185,7 @@ const SelectKPI = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="container mx-auto px-4 py-8">
+        {/* Header Section */}
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() =>
@@ -192,62 +193,159 @@ const SelectKPI = () => {
                 state: { activeTab: "settings" },
               })
             }
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
             <ChevronLeft className="h-6 w-6 text-gray-600 dark:text-gray-400" />
           </button>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Select KPI
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Select KPI
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Choose a KPI to analyze your data
+            </p>
+          </div>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
-            <p className="text-red-700 dark:text-red-300">{error}</p>
+        {/* Progress Indicator */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between max-w-2xl mx-auto">
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
+                1
+              </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                Configuration
+              </span>
+            </div>
+            <div className="flex-1 h-1 bg-blue-600 mx-4"></div>
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
+                2
+              </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                Select KPI
+              </span>
+            </div>
+            <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 mx-4"></div>
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 font-medium">
+                3
+              </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                Analysis
+              </span>
+            </div>
           </div>
+        </div>
+
+        {/* Status Messages */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-start gap-3 border border-red-200 dark:border-red-800"
+          >
+            <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-red-700 dark:text-red-300 font-medium">
+                Error
+              </p>
+              <p className="text-red-600 dark:text-red-400 text-sm mt-1">
+                {error}
+              </p>
+            </div>
+          </motion.div>
         )}
 
         {success && (
-          <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-start gap-3">
-            <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
-            <p className="text-green-700 dark:text-green-300">{success}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-start gap-3 border border-green-200 dark:border-green-800"
+          >
+            <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-green-700 dark:text-green-300 font-medium">
+                Success
+              </p>
+              <p className="text-green-600 dark:text-green-400 text-sm mt-1">
+                {success}
+              </p>
+            </div>
+          </motion.div>
         )}
 
         {loading && (
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-start gap-3">
-            <Loader2 className="h-5 w-5 text-blue-500 mt-0.5 animate-spin" />
-            <p className="text-blue-700 dark:text-blue-300">
-              Starting analysis...
-            </p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-start gap-3 border border-blue-200 dark:border-blue-800"
+          >
+            <Loader2 className="h-5 w-5 text-blue-500 mt-0.5 animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-blue-700 dark:text-blue-300 font-medium">
+                Processing
+              </p>
+              <p className="text-blue-600 dark:text-blue-400 text-sm mt-1">
+                Starting analysis... This may take a few moments.
+              </p>
+            </div>
+          </motion.div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          {kpiColumns?.map((kpi) => (
-            <motion.button
-              key={kpi.id}
-              onClick={() => setSelectedKpi(kpi)}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                selectedKpi?.id === kpi.id
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700"
-              }`}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {kpi.name}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {kpi.description || "No description available"}
-              </p>
-            </motion.button>
-          ))}
+        {/* KPI Selection Grid */}
+        <div className="mb-8">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            Available KPIs
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-w-6xl mx-auto">
+            {kpiColumns?.map((kpi) => (
+              <motion.button
+                key={kpi.id}
+                onClick={() => setSelectedKpi(kpi)}
+                className={`p-3 rounded-lg border-2 transition-all w-full ${
+                  selectedKpi?.id === kpi.id
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md"
+                    : "border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm"
+                }`}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {kpi.name}
+                    </h3>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">
+                      {kpi.description || "No description available"}
+                    </p>
+                  </div>
+                  {selectedKpi?.id === kpi.id && (
+                    <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle className="h-2.5 w-2.5 text-white" />
+                    </div>
+                  )}
+                </div>
+              </motion.button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex justify-end">
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-4">
+          <motion.button
+            onClick={() =>
+              navigate(`/${com_id}/projects/${project_id}/configuration`, {
+                state: { activeTab: "settings" },
+              })
+            }
+            className="px-6 py-3 rounded-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            Back
+          </motion.button>
           <motion.button
             onClick={handleAnalyze}
             disabled={!selectedKpi || loading}
@@ -255,11 +353,18 @@ const SelectKPI = () => {
               selectedKpi && !loading
                 ? "bg-blue-600 hover:bg-blue-700"
                 : "bg-gray-400 cursor-not-allowed"
-            }`}
+            } transition-colors`}
             whileHover={selectedKpi && !loading ? { scale: 1.05 } : {}}
             whileTap={selectedKpi && !loading ? { scale: 0.95 } : {}}
           >
-            {loading ? "Analyzing..." : "Analyze"}
+            {loading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Analyzing...</span>
+              </div>
+            ) : (
+              "Analyze"
+            )}
           </motion.button>
         </div>
       </div>

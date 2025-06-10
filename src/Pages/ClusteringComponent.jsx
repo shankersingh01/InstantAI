@@ -32,7 +32,18 @@ const ClusteringComponent = () => {
   const location = useLocation();
   const baseUrl = import.meta.env.VITE_BASE_URL;
   const { project_id, com_id } = useParams();
+  const navigate = useNavigate();
   const { activeKPI, kpiList, importantColumnNames } = location.state || {};
+
+  // Add check for required state
+  useEffect(() => {
+    if (!activeKPI || !kpiList || !importantColumnNames) {
+      console.error("Missing required state data, redirecting to select-kpi");
+      navigate(`/${com_id}/projects/${project_id}/select-kpi`);
+      return;
+    }
+  }, [activeKPI, kpiList, importantColumnNames, com_id, project_id, navigate]);
+
   const [newkpi, setNewkpi] = useState(
     activeKPI || (kpiList && kpiList.length > 0 ? kpiList[0] : "")
   );
@@ -61,7 +72,6 @@ const ClusteringComponent = () => {
   const { clusterHistory, selectedIndex } = useSelector(
     (state) => state.cluster
   );
-  const navigate = useNavigate();
   const [breadcrumbPath, setBreadcrumbPath] = useState([]);
   const [selectedClusterIndex, setSelectedClusterIndex] = useState(null);
   const [definitionAbsZScore, setDefinitionAbsZScore] = useState(null);
@@ -505,18 +515,21 @@ const ClusteringComponent = () => {
 
   const handleDownload = async (clusterIndex) => {
     try {
+      // Get the full path for this cluster
+      const fullPath = [...breadcrumbPath, clusterIndex];
+
       const response = await axios.post(
-        `${baseUrl}/projects/${project_id}/clusters/download`,
+        `${baseUrl}/projects/${project_id}/clusters/get_clusters`,
         {
+          indexes: fullPath.map(String), // Convert all indexes to strings
           project_id,
-          level: currentLevel,
-          path: breadcrumbPath,
-          cluster_index: clusterIndex,
         },
         {
           responseType: "blob",
+          headers: { "Content-Type": "application/json" },
         }
       );
+
       const blob = new Blob([response.data], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -550,18 +563,33 @@ const ClusteringComponent = () => {
   };
 
   const handleColumnHeaderClick = (clusterIndex) => {
-    if (
-      clusterTree &&
-      newkpi &&
-      clusterTree[newkpi] &&
-      clusterTree[newkpi].children
-    ) {
-      const clusterNode = clusterTree[newkpi].children[clusterIndex];
-      const absZScore = clusterNode?.cluster_definition?.abs_z_score;
-      console.log("clusterNode for modal:", clusterNode);
-      console.log("abs_z_score for modal:", absZScore);
-      setDefinitionAbsZScore(absZScore || null);
-      setTimeout(() => setIsOpen(true), 0); // Ensures state is set before opening modal
+    if (clusterTree && newkpi) {
+      let clusterNode;
+      if (breadcrumbPath.length === 0) {
+        // If we're at the root level, get from root children
+        clusterNode = clusterTree[newkpi].children[clusterIndex];
+      } else {
+        // If we're in a drill-down, get from the current path
+        const currentNode = getClusterByPath(
+          clusterTree[newkpi],
+          breadcrumbPath
+        );
+        if (currentNode && currentNode.children) {
+          clusterNode = currentNode.children[clusterIndex];
+        }
+      }
+
+      if (clusterNode) {
+        const absZScore = clusterNode?.cluster_definition?.abs_z_score;
+        console.log("Current level:", currentLevel);
+        console.log("Cluster node for modal:", clusterNode);
+        console.log("abs_z_score for modal:", absZScore);
+        setDefinitionAbsZScore(absZScore || null);
+        setTimeout(() => setIsOpen(true), 0);
+      } else {
+        setDefinitionAbsZScore(null);
+        setIsOpen(true);
+      }
     } else {
       setDefinitionAbsZScore(null);
       setIsOpen(true);
@@ -1292,15 +1320,18 @@ const ClusteringComponent = () => {
                   Analyze
                 </button>
                 <button
-                  onClick={() =>
+                  onClick={() => {
+                    // Ensure all required state is passed
+                    const stateData = {
+                      activeKPI: newkpi,
+                      kpiList,
+                      importantColumnNames,
+                      project_id,
+                    };
                     navigate(`/${com_id}/projects/${project_id}/workbench`, {
-                      state: {
-                        activeKPI: newkpi,
-                        kpiList,
-                        importantColumnNames,
-                      },
-                    })
-                  }
+                      state: stateData,
+                    });
+                  }}
                   className="p-2 rounded-lg font-semibold border px-4 bg-white text-gray-800 hover:bg-gray-100 transition-colors"
                 >
                   Workbench

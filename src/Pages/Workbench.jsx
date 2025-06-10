@@ -31,6 +31,30 @@ const Workbench = () => {
   const [storedClusterJourney, setStoredClusterJourney] = useState([]);
   const [isLoadingJourney, setIsLoadingJourney] = useState(true);
 
+  // Add state validation and redirection
+  useEffect(() => {
+    if (!activeKPI || !kpiList || !importantColumnNames) {
+      console.error("Missing required state data, redirecting to select-kpi");
+      navigate(`/${com_id}/projects/${project_id}/select-kpi`);
+    }
+  }, [activeKPI, kpiList, importantColumnNames, com_id, project_id, navigate]);
+
+  // Function to handle navigation back to clustering
+  const handleBackNavigation = () => {
+    if (!activeKPI || !kpiList || !importantColumnNames) {
+      console.error("Missing required state data for navigation");
+      return;
+    }
+    navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
+      state: {
+        activeKPI,
+        kpiList,
+        importantColumnNames,
+        project_id,
+      },
+    });
+  };
+
   // Initialize state with persisted values
   const [checkedState, setCheckedState] = useState(() => {
     const saved = localStorage.getItem(`workbench_checked_${project_id}`);
@@ -356,25 +380,13 @@ const Workbench = () => {
           <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
           <div className="flex justify-end gap-3">
             <button
-              onClick={() => {
-                // Ensure we have the required state data
-                const stateData = {
-                  activeKPI: activeKPI || "",
-                  kpiList: kpiList || [],
-                  importantColumnNames: importantColumnNames || [],
-                  project_id: project_id,
-                };
-                navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
-                  state: stateData,
-                });
-              }}
+              onClick={handleBackNavigation}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
             >
               Go Back
             </button>
             <button
               onClick={() => {
-                // Reload the current page with the same state
                 navigate(`/${com_id}/projects/${project_id}/workbench`, {
                   state: {
                     activeKPI,
@@ -398,6 +410,15 @@ const Workbench = () => {
   const displayClusterHistory =
     storedClusterJourney.length > 0 ? storedClusterJourney : clusterHistory;
 
+  // Filter out duplicate features, keeping only the first occurrence
+  const uniqueClusterHistory = displayClusterHistory.reduce((acc, cluster) => {
+    const featureExists = acc.some((item) => item.feature === cluster.feature);
+    if (!featureExists) {
+      acc.push(cluster);
+    }
+    return acc;
+  }, []);
+
   // Debug logs to diagnose blank UI
   console.log("storedClusterJourney", storedClusterJourney);
   console.log("clusterHistory", clusterHistory);
@@ -413,7 +434,7 @@ const Workbench = () => {
   };
 
   const handleInputChange = (index, value) => {
-    const feature = storedClusterJourney[index].feature;
+    const feature = displayClusterHistory[index].feature;
     setAdjustments((prevAdjustments) => ({
       ...prevAdjustments,
       [feature]: value,
@@ -457,7 +478,13 @@ const Workbench = () => {
       if (response.data && response.data.data && response.data.layout) {
         setSuccess("Projection generated successfully!");
         navigate(`/${com_id}/projects/${project_id}/projection`, {
-          state: { plotlyGraph: response.data },
+          state: {
+            plotlyGraph: response.data,
+            activeKPI,
+            kpiList,
+            importantColumnNames,
+            project_id,
+          },
         });
       } else {
         throw new Error("Invalid response format from forecast API");
@@ -563,15 +590,18 @@ const Workbench = () => {
           <div className="flex justify-end">
             <button
               onClick={() => {
-                // Ensure we have the required state data
-                const stateData = {
-                  activeKPI: activeKPI || "",
-                  kpiList: kpiList || [],
-                  importantColumnNames: importantColumnNames || [],
-                  project_id: project_id,
-                };
+                // Ensure we have all required state data
+                if (!activeKPI || !kpiList || !importantColumnNames) {
+                  console.error("Missing required state data for navigation");
+                  return;
+                }
                 navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
-                  state: stateData,
+                  state: {
+                    activeKPI,
+                    kpiList,
+                    importantColumnNames,
+                    project_id,
+                  },
                 });
               }}
               className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
@@ -626,15 +656,7 @@ const Workbench = () => {
         <motion.div variants={itemVariants} className="mb-8">
           <div className="flex items-center gap-3">
             <motion.button
-              onClick={() =>
-                navigate(`/${com_id}/projects/${project_id}/clustered-data`, {
-                  state: {
-                    activeKPI,
-                    kpiList,
-                    importantColumnNames,
-                  },
-                })
-              }
+              onClick={handleBackNavigation}
               className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -851,7 +873,7 @@ const Workbench = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayClusterHistory.map((cluster, index) => (
+                {uniqueClusterHistory.map((cluster, index) => (
                   <React.Fragment key={index}>
                     <tr className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="py-3 px-4">
