@@ -370,29 +370,40 @@ const Workbench = () => {
 
   // Show error state if there's an error
   if (error) {
+    console.log("Rendering error box with error:", error);
     return (
-      <div className="flex h-[calc(100vh-80px)] items-center justify-center">
-        <div className="bg-white p-8 rounded-lg shadow-lg">
-          <h2 className="text-xl font-semibold text-red-600 mb-4">
-            Error Loading Data
-          </h2>
-          <p className="text-gray-700">{error}</p>
-          <div className="mt-4 space-x-4">
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+          <div className="flex items-center gap-3 text-red-500 mb-4">
+            <Info className="h-6 w-6" />
+            <h2 className="text-lg font-semibold">Error Loading Data</h2>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <div className="flex justify-end gap-3">
             <button
               onClick={() => {
                 setError(""); // Just close the error box
                 setIsLoading(false);
               }}
-              className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
             >
               Go Back
             </button>
-            <button
-              onClick={handleActionClick}
-              className="px-4 py-2 bg-purple-400 text-white rounded-md hover:bg-purple-500"
+            {/* <button
+              onClick={() => {
+                navigate(`/${com_id}/projects/${project_id}/workbench`, {
+                  state: {
+                    activeKPI,
+                    kpiList,
+                    importantColumnNames,
+                    project_id,
+                  },
+                });
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
             >
               Try Again
-            </button>
+            </button> */}
           </div>
         </div>
       </div>
@@ -487,11 +498,12 @@ const Workbench = () => {
         error,
         error?.response?.data
       );
-      setError(
-        error.response?.data?.message ||
-          error.response?.data?.detail ||
-          "Failed to generate projection. Please try again."
-      );
+      const errMsg =
+        (error.response?.data?.message && error.response.data.message.trim()) ||
+        (error.response?.data?.detail && error.response.data.detail.trim()) ||
+        (error.message && error.message.trim()) ||
+        "Unknown error";
+      setError("Forecasting failed: " + errMsg);
     } finally {
       setIsLoading(false);
     }
