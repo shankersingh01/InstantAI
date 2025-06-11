@@ -364,7 +364,10 @@ const ClusteringComponent = () => {
 
   const toggleDropdown = (e, feature, clusterIndex) => {
     e.stopPropagation();
-    setOpenDropdowns({ [`${feature}-${clusterIndex}`]: true });
+    setOpenDropdowns((prev) => ({
+      ...prev,
+      [`${feature}-${clusterIndex}`]: !prev[`${feature}-${clusterIndex}`],
+    }));
   };
 
   const handleAnalyze = () => {
@@ -515,15 +518,27 @@ const ClusteringComponent = () => {
 
   const handleDownload = async (clusterIndex) => {
     try {
-      // Get the full path for this cluster
-      const fullPath = [...breadcrumbPath, clusterIndex];
+      // Get the current cluster node to access its indices
+      let clusterNode;
+      if (breadcrumbPath.length === 0) {
+        clusterNode = clusterTree[newkpi].children[clusterIndex];
+      } else {
+        const currentNode = getClusterByPath(
+          clusterTree[newkpi],
+          breadcrumbPath
+        );
+        if (currentNode && currentNode.children) {
+          clusterNode = currentNode.children[clusterIndex];
+        }
+      }
+
+      if (!clusterNode || !clusterNode.indices) {
+        throw new Error("No cluster data available");
+      }
 
       const response = await axios.post(
         `${baseUrl}/projects/${project_id}/clusters/get_clusters`,
-        {
-          indexes: fullPath.map(String), // Convert all indexes to strings
-          project_id,
-        },
+        clusterNode.indices,
         {
           responseType: "blob",
           headers: { "Content-Type": "application/json" },
@@ -683,17 +698,19 @@ const ClusteringComponent = () => {
                 setError(null);
                 setLoading(false);
               }}
-              className="px-4 py-2 bg-purple-400 text-white rounded-md hover:bg-purple-500"
+              className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
             >
-              Try Again
+              OK
             </button>
             <button
               onClick={() => {
-                window.location.href = `/${com_id}/projects/${project_id}/configuration/`;
+                setError(null);
+                setLoading(false);
+                setIsOpen(true);
               }}
-              className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
+              className="px-4 py-2 bg-purple-400 text-white rounded-md hover:bg-purple-500"
             >
-              Go to Configuration
+              Try Again
             </button>
           </div>
         </div>
@@ -859,7 +876,7 @@ const ClusteringComponent = () => {
                                 <button
                                   className="ml-2 p-1 rounded-full hover:bg-gray-200 transition-colors"
                                   onClick={(e) => {
-                                    e.preventDefault();
+                                    e.stopPropagation();
                                     handleDownload(index);
                                   }}
                                 >

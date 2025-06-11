@@ -371,32 +371,25 @@ const Workbench = () => {
   // Show error state if there's an error
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
-          <div className="flex items-center gap-3 text-red-500 mb-4">
-            <Info className="h-6 w-6" />
-            <h2 className="text-lg font-semibold">Error Loading Data</h2>
-          </div>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
-          <div className="flex justify-end gap-3">
+      <div className="flex h-[calc(100vh-80px)] items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-lg">
+          <h2 className="text-xl font-semibold text-red-600 mb-4">
+            Error Loading Data
+          </h2>
+          <p className="text-gray-700">{error}</p>
+          <div className="mt-4 space-x-4">
             <button
-              onClick={handleBackNavigation}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+              onClick={() => {
+                setError(""); // Just close the error box
+                setIsLoading(false);
+              }}
+              className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
             >
               Go Back
             </button>
             <button
-              onClick={() => {
-                navigate(`/${com_id}/projects/${project_id}/workbench`, {
-                  state: {
-                    activeKPI,
-                    kpiList,
-                    importantColumnNames,
-                    project_id,
-                  },
-                });
-              }}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+              onClick={handleActionClick}
+              className="px-4 py-2 bg-purple-400 text-white rounded-md hover:bg-purple-500"
             >
               Try Again
             </button>
@@ -433,10 +426,9 @@ const Workbench = () => {
     setCheckedState(updatedCheckedState);
   };
 
-  const handleInputChange = (index, value) => {
-    const feature = displayClusterHistory[index].feature;
-    setAdjustments((prevAdjustments) => ({
-      ...prevAdjustments,
+  const handleInputChange = (feature, value) => {
+    setAdjustments((prev) => ({
+      ...prev,
       [feature]: value,
     }));
   };
@@ -509,21 +501,19 @@ const Workbench = () => {
     setIsPopupVisible(false);
   };
 
-  const handleOneHotEncoding = async (index) => {
-    setLoadingIndex(index);
+  const handleOneHotEncoding = async (feature) => {
+    setLoadingIndex(feature);
     setError("");
     setSuccess("");
 
     // Robust column matching: always use the exact column name from columns
-    const targetFeature = displayClusterHistory[index].feature;
     const actualColumn = columns.find(
-      (col) =>
-        col.trim().toLowerCase() === (targetFeature || "").trim().toLowerCase()
+      (col) => col.trim().toLowerCase() === (feature || "").trim().toLowerCase()
     );
 
     if (!actualColumn) {
       setError(
-        `Target column '${targetFeature}' not found in available columns. Please check your data.`
+        `Target column '${feature}' not found in available columns. Please check your data.`
       );
       setLoadingIndex(null);
       return;
@@ -541,14 +531,18 @@ const Workbench = () => {
       });
 
       if (response.data && response.data.top_5_feature_importances) {
+        // Find the index in uniqueClusterHistory for this feature
+        const idx = uniqueClusterHistory.findIndex(
+          (c) => c.feature === feature
+        );
         setWeightData((prevState) => ({
           ...prevState,
-          [index]: response.data.top_5_feature_importances,
+          [idx]: response.data.top_5_feature_importances,
         }));
 
         setExpandedSections((prev) => ({
           ...prev,
-          [index]: true,
+          [idx]: true,
         }));
 
         setSuccess("Feature ranking completed successfully!");
@@ -908,7 +902,7 @@ const Workbench = () => {
                             }`}
                             disabled={!checkedState[index] || isLoading}
                             onChange={(e) =>
-                              handleInputChange(index, e.target.value)
+                              handleInputChange(cluster.feature, e.target.value)
                             }
                             value={adjustments[cluster.feature] || ""}
                             placeholder="New value"
@@ -916,22 +910,30 @@ const Workbench = () => {
                           {checkedState[index] && (
                             <div className="flex items-center gap-2">
                               <motion.button
-                                onClick={() => handleOneHotEncoding(index)}
+                                onClick={() =>
+                                  handleOneHotEncoding(cluster.feature)
+                                }
                                 className={`h-8 px-2 rounded-md flex items-center gap-1 text-xs font-medium ${
-                                  loadingIndex === index
+                                  loadingIndex === cluster.feature
                                     ? "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
                                     : "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
                                 }`}
                                 title="Generate OneHot Encoding"
-                                disabled={loadingIndex === index || isLoading}
+                                disabled={
+                                  loadingIndex === cluster.feature || isLoading
+                                }
                                 whileHover={
-                                  loadingIndex === index ? {} : { scale: 1.05 }
+                                  loadingIndex === cluster.feature
+                                    ? {}
+                                    : { scale: 1.05 }
                                 }
                                 whileTap={
-                                  loadingIndex === index ? {} : { scale: 0.95 }
+                                  loadingIndex === cluster.feature
+                                    ? {}
+                                    : { scale: 0.95 }
                                 }
                               >
-                                {loadingIndex === index ? (
+                                {loadingIndex === cluster.feature ? (
                                   <Loader2 className="w-3 h-3 animate-spin" />
                                 ) : (
                                   <>
