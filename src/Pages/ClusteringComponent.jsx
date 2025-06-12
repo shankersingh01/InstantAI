@@ -493,20 +493,20 @@ const ClusteringComponent = () => {
   }, [clusterHistory, selectedIndex, clusterTree, newkpi]); // Add clusterTree and newkpi as dependencies
 
   const handleNavigateToPath = (pathIndices) => {
-    // Find the index in the journey that matches the path
     let selIdx = -1;
-    for (let i = 0; i < pathIndices.length; i++) {
-      if (!journey[i] || journey[i].clusterIndex !== pathIndices[i]) {
-        selIdx = -1;
-        break;
-      }
-      selIdx = i;
+    if (pathIndices.length > 0) {
+      selIdx = pathIndices[pathIndices.length - 1];
     }
     if (selIdx === -1 && pathIndices.length === 0) selIdx = -1; // root
     setCurrentSelectionIndex(selIdx);
     setBreadcrumbPath(pathIndices);
     setSelectedClusterIndex(null);
-    // Update table view
+
+    // Update currentLevel based on the path length
+    // If we're at level X, we want to look at the cell analyzed in level X-1
+    setCurrentLevel(pathIndices.length + 1);
+
+    // Update table view using the full path to get the correct clusters for the selected level
     const node =
       pathIndices.length === 0
         ? clusterTree[newkpi]
@@ -647,10 +647,6 @@ const ClusteringComponent = () => {
     }
   };
 
-  // Determine if the current level is already analyzed
-  const isLevelAnalyzed =
-    journey.length > 0 && currentSelectionIndex < journey.length - 1;
-
   if (!project_id || !location.state) {
     return (
       <Box
@@ -717,20 +713,6 @@ const ClusteringComponent = () => {
       </div>
     );
   }
-
-  // Show "No data" message only if we're not loading and there's no error
-  // if (!extractedClusters || extractedClusters.length === 0) {
-  //   return (
-  //     <Box
-  //       display="flex"
-  //       justifyContent="center"
-  //       alignItems="center"
-  //       minHeight="100vh"
-  //     >
-  //       <Typography>No more clusters can be formed</Typography>
-  //     </Box>
-  //   );
-  // }
 
   const currentNode =
     breadcrumbPath.length === 0
@@ -925,12 +907,13 @@ const ClusteringComponent = () => {
                                       <td
                                         key={clusterIndex}
                                         className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                          journey[currentLevel] &&
-                                          journey[currentLevel].feature ===
+                                          currentLevel > 0 &&
+                                          journey[currentLevel - 1] &&
+                                          journey[currentLevel - 1].feature ===
                                             feature &&
-                                          journey[currentLevel].clusterIndex ===
-                                            clusterIndex
-                                            ? "bg-indigo-100"
+                                          journey[currentLevel - 1]
+                                            .clusterIndex === clusterIndex
+                                            ? "bg-blue-100 font-medium cursor-not-allowed"
                                             : ""
                                         } ${
                                           selectedCell?.feature === feature &&
@@ -939,13 +922,14 @@ const ClusteringComponent = () => {
                                           selectedClusterIndex === clusterIndex
                                             ? "ring-2 ring-indigo-400"
                                             : ""
-                                        } ${
-                                          isLevelAnalyzed
-                                            ? "cursor-not-allowed opacity-50"
-                                            : ""
                                         }`}
                                         onClick={
-                                          isLevelAnalyzed
+                                          currentLevel > 0 &&
+                                          journey[currentLevel - 1] &&
+                                          journey[currentLevel - 1].feature ===
+                                            feature &&
+                                          journey[currentLevel - 1]
+                                            .clusterIndex === clusterIndex
                                             ? undefined
                                             : () => {
                                                 setOpenDropdowns({});
@@ -1026,12 +1010,13 @@ const ClusteringComponent = () => {
                                     <td
                                       key={clusterIndex}
                                       className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                        journey[currentLevel] &&
-                                        journey[currentLevel].feature ===
+                                        currentLevel > 0 &&
+                                        journey[currentLevel - 1] &&
+                                        journey[currentLevel - 1].feature ===
                                           feature &&
-                                        journey[currentLevel].clusterIndex ===
-                                          clusterIndex
-                                          ? "bg-indigo-100"
+                                        journey[currentLevel - 1]
+                                          .clusterIndex === clusterIndex
+                                          ? "bg-blue-100 font-medium cursor-not-allowed"
                                           : ""
                                       } ${
                                         selectedCell?.feature === feature &&
@@ -1040,20 +1025,23 @@ const ClusteringComponent = () => {
                                         selectedClusterIndex === clusterIndex
                                           ? "ring-2 ring-indigo-400"
                                           : ""
-                                      } ${
-                                        isLevelAnalyzed
-                                          ? "cursor-not-allowed opacity-50"
-                                          : ""
                                       }`}
                                       onClick={
-                                        isLevelAnalyzed
+                                        currentLevel > 0 &&
+                                        journey[currentLevel - 1] &&
+                                        journey[currentLevel - 1].feature ===
+                                          feature &&
+                                        journey[currentLevel - 1]
+                                          .clusterIndex === clusterIndex
                                           ? undefined
-                                          : () =>
+                                          : () => {
+                                              setOpenDropdowns({});
                                               handleCellClick(
                                                 feature,
                                                 clusterIndex,
                                                 displayValue
-                                              )
+                                              );
+                                            }
                                       }
                                     >
                                       <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
@@ -1136,12 +1124,13 @@ const ClusteringComponent = () => {
                                       <td
                                         key={clusterIndex}
                                         className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                          journey[currentLevel] &&
-                                          journey[currentLevel].feature ===
+                                          currentLevel > 0 &&
+                                          journey[currentLevel - 1] &&
+                                          journey[currentLevel - 1].feature ===
                                             feature &&
-                                          journey[currentLevel].clusterIndex ===
-                                            clusterIndex
-                                            ? "bg-indigo-100"
+                                          journey[currentLevel - 1]
+                                            .clusterIndex === clusterIndex
+                                            ? "bg-blue-100 font-medium cursor-not-allowed"
                                             : ""
                                         } ${
                                           selectedCell?.feature === feature &&
@@ -1150,20 +1139,23 @@ const ClusteringComponent = () => {
                                           selectedClusterIndex === clusterIndex
                                             ? "ring-2 ring-indigo-400"
                                             : ""
-                                        } ${
-                                          isLevelAnalyzed
-                                            ? "cursor-not-allowed opacity-50"
-                                            : ""
                                         }`}
                                         onClick={
-                                          isLevelAnalyzed
+                                          currentLevel > 0 &&
+                                          journey[currentLevel - 1] &&
+                                          journey[currentLevel - 1].feature ===
+                                            feature &&
+                                          journey[currentLevel - 1]
+                                            .clusterIndex === clusterIndex
                                             ? undefined
-                                            : () =>
+                                            : () => {
+                                                setOpenDropdowns({});
                                                 handleCellClick(
                                                   feature,
                                                   clusterIndex,
                                                   value
-                                                )
+                                                );
+                                              }
                                         }
                                       >
                                         <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
@@ -1233,12 +1225,13 @@ const ClusteringComponent = () => {
                                     <td
                                       key={clusterIndex}
                                       className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                        journey[currentLevel] &&
-                                        journey[currentLevel].feature ===
+                                        currentLevel > 0 &&
+                                        journey[currentLevel - 1] &&
+                                        journey[currentLevel - 1].feature ===
                                           feature &&
-                                        journey[currentLevel].clusterIndex ===
-                                          clusterIndex
-                                          ? "bg-indigo-100"
+                                        journey[currentLevel - 1]
+                                          .clusterIndex === clusterIndex
+                                          ? "bg-blue-100 font-medium cursor-not-allowed"
                                           : ""
                                       } ${
                                         selectedCell?.feature === feature &&
@@ -1247,20 +1240,23 @@ const ClusteringComponent = () => {
                                         selectedClusterIndex === clusterIndex
                                           ? "ring-2 ring-indigo-400"
                                           : ""
-                                      } ${
-                                        isLevelAnalyzed
-                                          ? "cursor-not-allowed opacity-50"
-                                          : ""
                                       }`}
                                       onClick={
-                                        isLevelAnalyzed
+                                        currentLevel > 0 &&
+                                        journey[currentLevel - 1] &&
+                                        journey[currentLevel - 1].feature ===
+                                          feature &&
+                                        journey[currentLevel - 1]
+                                          .clusterIndex === clusterIndex
                                           ? undefined
-                                          : () =>
+                                          : () => {
+                                              setOpenDropdowns({});
                                               handleCellClick(
                                                 feature,
                                                 clusterIndex,
                                                 displayValue
-                                              )
+                                              );
+                                            }
                                       }
                                     >
                                       <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
@@ -1327,9 +1323,9 @@ const ClusteringComponent = () => {
               <div className="flex flex-wrap justify-start items-center gap-4 mt-4">
                 <button
                   onClick={handleAnalyze}
-                  disabled={selectedClusterIndex === null || isLevelAnalyzed}
+                  disabled={selectedClusterIndex === null}
                   className={`px-4 py-2 rounded ${
-                    selectedClusterIndex !== null && !isLevelAnalyzed
+                    selectedClusterIndex !== null
                       ? "bg-blue-600 text-white hover:bg-blue-700"
                       : "bg-gray-300 text-gray-500 cursor-not-allowed"
                   }`}

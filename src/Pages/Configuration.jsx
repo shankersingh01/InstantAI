@@ -112,14 +112,12 @@ function ConfigurationContent() {
   const [file, setFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState("");
-  const [uploadSuccess, setUploadSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
   const [validated, setValidated] = useState(false);
 
   // Column selection states
   const [columns, setColumns] = useState(DUMMY_COLUMNS);
-  const [droppedColumns, setDroppedColumns] = useState([]);
   const [selectedKpi, setSelectedKpi] = useState([]);
   const [selectedImportant, setSelectedImportant] = useState([]);
   const [columnError, setColumnError] = useState("");
@@ -159,6 +157,34 @@ function ConfigurationContent() {
     useState(false);
   const [additionalFilesError, setAdditionalFilesError] = useState("");
   const [additionalFilesSuccess, setAdditionalFilesSuccess] = useState("");
+
+  // Add new state for newly selected columns to drop
+  const [newDroppedColumns, setNewDroppedColumns] = useState([]);
+
+  // Compute dropped column IDs
+  const droppedIds = columns
+    .filter((col) => droppedNames.includes(col.name))
+    .map((col) => col.id);
+
+  // The value for the select box is all dropped columns (disabled) + new ones
+  const selectValue = [
+    ...droppedIds.map((id) => {
+      const column = columns.find((col) => col.id === id);
+      return column
+        ? { value: id, label: column.name, isDisabled: true }
+        : null;
+    }),
+    ...newDroppedColumns
+      .filter((id) => !droppedIds.includes(id))
+      .map((id) => {
+        const column = columns.find((col) => col.id === id);
+        return column ? { value: id, label: column.name } : null;
+      }),
+  ].filter(Boolean);
+
+  // The drop button is only enabled if newDroppedColumns has at least one column
+  const isDropButtonDisabled =
+    newDroppedColumns.length === 0 || droppingColumns;
 
   // Memoized fetchAndRestoreProject for reuse
   const fetchAndRestoreProject = useCallback(async () => {
@@ -278,25 +304,11 @@ function ConfigurationContent() {
     }
   }, [project?.droppedColumns, columns]);
 
-  const [isChatOpen, setIsChatOpen] = useState(false);
-
-  // Sync local columns state with Redux project.columns if available
-  useEffect(() => {
-    if (project && project.columns && project.columns.length > 0) {
-      setColumns(project.columns);
-    }
-  }, [project]);
-
   // Merge column/droppedColumns state restoration logic and handle tab validity
   useEffect(() => {
     if (project && project.columns && project.droppedColumns) {
       // Only show columns that are not dropped
-      setColumns(
-        project.columns.filter(
-          (col) => !project.droppedColumns.includes(col.name)
-        )
-      );
-      setDroppedColumns(project.droppedColumns);
+      setColumns(project.columns);
       // Restore selectedKpi and selectedImportant from Redux if needed
       if (project.kpiList) {
         setSelectedKpi(
@@ -419,14 +431,12 @@ function ConfigurationContent() {
   const handleRemoveFile = () => {
     console.log("handleRemoveFile called");
     setFile(null);
-    setUploadSuccess("");
     setValidated(false);
     setUploadError("");
     setColumns(DUMMY_COLUMNS);
     setImportantColumnNames([]);
-    setDroppedColumns([]);
+    setNewDroppedColumns([]);
     setUploadedFileData([]);
-    setIsChatOpen(false);
     localStorage.removeItem(`chat_messages_${project_id}`);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -467,19 +477,13 @@ function ConfigurationContent() {
 
         setColumns(formattedColumns);
         setImportantColumnNames(response.data.importantColumnNames || []);
-        setDroppedColumns(response.data.droppedColumns || []);
+        setNewDroppedColumns(response.data.droppedColumns || []);
         setUploadedFileData(response.data.uploadedFileData || []);
       }
 
       // Show success message
-      setUploadSuccess("File uploaded and validated successfully!");
-      setValidated(true);
       setShowSuccessToast(true); // Show toast
       setTimeout(() => setShowSuccessToast(false), 3000); // Hide after 3s
-
-      // Reset chatbot state
-      setIsChatOpen(false);
-      localStorage.removeItem(`chat_messages_${project_id}`);
 
       // After backend update, re-fetch project state
       await fetchAndRestoreProject();
@@ -496,7 +500,7 @@ function ConfigurationContent() {
   };
 
   const handleDropColumns = async () => {
-    if (!droppedColumns || droppedColumns.length === 0) {
+    if (!newDroppedColumns || newDroppedColumns.length === 0) {
       setColumnError("Please select at least one column to drop");
       return;
     }
@@ -504,7 +508,7 @@ function ConfigurationContent() {
     setColumnError("");
     setColumnSuccess("");
     try {
-      const columnNames = droppedColumns
+      const columnNames = newDroppedColumns
         .map((colId) => {
           const column = columns.find((c) => c.id === colId);
           return column ? column.name : null;
@@ -526,7 +530,7 @@ function ConfigurationContent() {
         );
         if (newColumnsToDrop.length === 0) {
           setDroppingColumns(false);
-          setDroppedColumns([]); // Clear selection
+          setNewDroppedColumns([]); // Clear selection
           return;
         }
         const response = await axiosInstance.post(
@@ -540,7 +544,7 @@ function ConfigurationContent() {
           setColumnSuccess(
             `Successfully dropped columns: ${newColumnsToDrop.join(", ")}`
           );
-          setDroppedColumns([]); // Clear selection
+          setNewDroppedColumns([]); // Clear selection
           await fetchAndRestoreProject(); // Sync with backend
         }
       } else {
@@ -553,7 +557,7 @@ function ConfigurationContent() {
         );
         if (response.status === 200) {
           setColumnSuccess("Columns dropped successfully!");
-          setDroppedColumns([]); // Clear selection
+          setNewDroppedColumns([]); // Clear selection
           await fetchAndRestoreProject(); // Sync with backend
         } else {
           setColumnError("Failed to drop columns: " + response.data.message);
@@ -566,7 +570,7 @@ function ConfigurationContent() {
         error.response?.data?.detail === "Project not found or no change made."
       ) {
         setColumnSuccess("Columns were already dropped.");
-        setDroppedColumns([]); // Clear selection
+        setNewDroppedColumns([]); // Clear selection
       } else {
         setColumnError(
           error.response?.data?.message ||
@@ -1482,24 +1486,25 @@ function ConfigurationContent() {
                           isMulti
                           menuCloseOnSelect={false}
                           closeMenuOnSelect={false}
-                          options={columns
-                            .filter((col) => !droppedNames.includes(col.name))
-                            .map((col) => ({ value: col.id, label: col.name }))}
-                          value={droppedColumns
-                            .map((id) => {
-                              const column = columns.find(
-                                (col) => col.id === id
-                              );
-                              return column
-                                ? { value: id, label: column.name }
-                                : null;
-                            })
-                            .filter(Boolean)}
+                          options={columns.map((col) => ({
+                            value: col.id,
+                            label: col.name,
+                          }))}
+                          value={selectValue}
                           onChange={(selected) => {
-                            setDroppedColumns(
-                              selected.map((option) => option.value)
+                            // Only allow selection of columns that are not already dropped
+                            const selectedIds = selected.map(
+                              (option) => option.value
+                            );
+                            setNewDroppedColumns(
+                              selectedIds.filter(
+                                (id) => !droppedIds.includes(id)
+                              )
                             );
                           }}
+                          isOptionDisabled={(option) =>
+                            droppedIds.includes(option.value)
+                          }
                           placeholder="Select columns to drop..."
                           className="react-select-container"
                           classNamePrefix="react-select"
@@ -1528,7 +1533,11 @@ function ConfigurationContent() {
                                 : state.isFocused
                                 ? "rgb(238 242 255)"
                                 : base.backgroundColor,
-                              color: state.isSelected ? "white" : "inherit",
+                              color: state.isSelected
+                                ? "white"
+                                : state.isDisabled
+                                ? "#aaa"
+                                : "inherit",
                               ":active": {
                                 backgroundColor: state.isSelected
                                   ? "rgb(67 56 202)"
@@ -1570,15 +1579,9 @@ function ConfigurationContent() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={handleDropColumns}
-                        disabled={
-                          !droppedColumns ||
-                          droppedColumns.length === 0 ||
-                          droppingColumns
-                        }
+                        disabled={isDropButtonDisabled}
                         className={`mt-2 px-4 py-2.5 rounded-md text-white flex items-center gap-2 transition-all ${
-                          !droppedColumns ||
-                          droppedColumns.length === 0 ||
-                          droppingColumns
+                          isDropButtonDisabled
                             ? "bg-gray-400 cursor-not-allowed opacity-70"
                             : "bg-red-500 hover:bg-red-600 shadow-sm hover:shadow"
                         }`}
@@ -1855,8 +1858,8 @@ function ConfigurationContent() {
         {/* ChatBot Modal */}
         <ChatBot
           key={`${project_id}-${file?.name || "no-file"}-${validated}`}
-          isOpen={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
+          isOpen={false}
+          onClose={() => {}}
         />
       </div>
     </div>
