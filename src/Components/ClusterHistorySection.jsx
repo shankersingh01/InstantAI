@@ -35,7 +35,7 @@ const ClusterHistorySection = ({
                 key={index}
                 onClick={() =>
                   onSegmentClick(
-                    journey.slice(0, index + 1).map((j) => j.clusterIndex)
+                    journey.slice(0, index).map((j) => j.clusterIndex)
                   )
                 }
                 className={`p-4 rounded-lg cursor-pointer transition-all ${

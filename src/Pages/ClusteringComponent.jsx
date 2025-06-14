@@ -539,13 +539,20 @@ const ClusteringComponent = () => {
       const response = await axios.post(
         `${baseUrl}/projects/${project_id}/clusters/get_clusters`,
         clusterNode.indices,
-        {
-          responseType: "blob",
-          headers: { "Content-Type": "application/json" },
-        }
+        { headers: { "Content-Type": "application/json" } }
       );
-
-      const blob = new Blob([response.data], { type: "text/csv" });
+      const html = response.data;
+      const parser = new window.DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const table = doc.querySelector("table");
+      let csv = "";
+      for (const row of table.rows) {
+        const cells = Array.from(row.cells).map(
+          (cell) => '"' + cell.innerText.replace(/"/g, '""') + '"'
+        );
+        csv += cells.join(",") + "\n";
+      }
+      const blob = new Blob([csv], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
