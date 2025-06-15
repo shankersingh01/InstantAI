@@ -11,6 +11,7 @@ import {
   Moon,
   Sun,
   Bell,
+  FileText,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -89,6 +90,13 @@ const AppBar = () => {
         "project_id"
       )}/projection`,
       icon: Layers,
+    },
+    {
+      name: "Tracking",
+      path: `/${localStorage.getItem("com_id")}/projects/${localStorage.getItem(
+        "project_id"
+      )}/tracking`,
+      icon: FileText,
     },
   ];
 

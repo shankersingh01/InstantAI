@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import FloatingChatbotButton from "./Components/FloatingChatbotButton";
 import ChatbotPage from "./Pages/ChatbotPage";
+import Tracking from "./Pages/Tracking";
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -125,6 +126,7 @@ function App() {
               <Route path="workbench" element={<Workbench />} />
               <Route path="projection" element={<Projection />} />
               <Route path="chatbot" element={<ChatbotPage />} />
+              <Route path="tracking" element={<Tracking />} />
             </Route>
           </Route>
 
