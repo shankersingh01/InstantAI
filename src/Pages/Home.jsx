@@ -6,7 +6,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
-  Folder,
   FolderOpen,
   AlertCircle,
   RefreshCw,
@@ -45,6 +44,8 @@ const Home = () => {
   const [successMessage, setSuccessMessage] = useState("");
 
   const toastTimer = useRef(null);
+
+  const [sortOption, setSortOption] = useState("created_desc");
 
   useEffect(() => {
     if (!com_id) {
@@ -257,8 +258,18 @@ const Home = () => {
     }
   };
 
+  // Sorting logic
+  const sortedProjects = [...projects].sort((a, b) => {
+    if (sortOption === "name_asc") return a.name.localeCompare(b.name);
+    if (sortOption === "name_desc") return b.name.localeCompare(a.name);
+    if (sortOption === "created_asc")
+      return new Date(a.created_at) - new Date(b.created_at);
+    // Default: created_desc
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
   // Filter projects based on search term
-  const filteredProjects = projects.filter((project) =>
+  const filteredProjects = sortedProjects.filter((project) =>
     project.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -336,12 +347,7 @@ const Home = () => {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
-      >
+      <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             Projects
@@ -350,33 +356,43 @@ const Home = () => {
             Manage and analyze your data projects
           </p>
         </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-          <div className="relative w-full sm:w-64">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-gray-400" />
+        <div className="flex flex-col sm:flex-row w-full md:w-auto items-center gap-3">
+          <div className="flex flex-col sm:flex-row w-full gap-3 flex-1">
+            <div className="relative w-full sm:w-48">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search projects"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input pl-10 w-full"
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input pl-10 w-full"
-            />
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value)}
+              className="input w-56 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+            >
+              <option value="created_desc">Newest</option>
+              <option value="created_asc">Oldest</option>
+              <option value="name_asc">Name (A-Z)</option>
+              <option value="name_desc">Name (Z-A)</option>
+            </select>
           </div>
-
           <motion.button
             onClick={() => setShowModal(true)}
-            className="btn btn-primary flex items-center justify-center gap-2 px-4 py-2"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-base font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors duration-200 ml-0 sm:ml-8 mt-2 sm:mt-0"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
           >
             <Plus className="h-5 w-5" />
             <span>New Project</span>
           </motion.button>
         </div>
-      </motion.div>
-
+      </div>
+      {/* Project List */}
       {error && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -393,19 +409,19 @@ const Home = () => {
             <motion.button
               onClick={loadProjects}
               disabled={loading}
-              className="btn btn-sm btn-outline flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-900/20"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-md hover:bg-red-50 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
               <RefreshCw className="h-4 w-4" />
-              <span>Retry</span>
+              Retry
             </motion.button>
           </div>
         </motion.div>
       )}
-
+      {/* Project Cards Grid */}
       {loading ? (
-        <Loader text="Loading projects..." />
+        <Loader />
       ) : filteredProjects.length > 0 ? (
         <motion.div
           variants={containerVariants}
@@ -429,63 +445,50 @@ const Home = () => {
                   >
                     <FolderOpen className="h-20 w-20 text-white/20 group-hover:text-white/30 transition-colors" />
                   </motion.div>
-                  <div className="absolute top-2 right-2 flex gap-1">
+                </div>
+                <div className="p-6 flex flex-col gap-2">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                    {project.name}
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm truncate">
+                    {project.description}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Created: {new Date(project.created_at).toLocaleString()}
+                  </p>
+                  <div className="flex justify-center gap-2 mt-3">
                     <motion.button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setProjectToModify(project);
-                        setNewProjectName(project.name);
-                        setShowRenameModal(true);
-                      }}
-                      className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors"
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleProjectClick(project.project_id)}
+                      className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors duration-200"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                     >
-                      <Edit className="h-3.5 w-3.5" />
+                      Open
                     </motion.button>
                     <motion.button
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
+                        setProjectToModify(project);
+                        setShowRenameModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors duration-200"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Edit className="h-4 w-4" />
+                      Rename
+                    </motion.button>
+                    <motion.button
+                      onClick={() => {
                         setProjectToModify(project);
                         setShowDeleteConfirm(true);
                       }}
-                      className="p-1.5 rounded-full bg-white/20 hover:bg-red-400 text-white transition-colors"
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors duration-200"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4" />
+                      Delete
                     </motion.button>
-                  </div>
-                </div>
-                <div
-                  className="p-5"
-                  onClick={() =>
-                    !loading && handleProjectClick(project.project_id)
-                  }
-                >
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white capitalize mb-2 truncate">
-                    {project.name}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 h-10">
-                    {project.description || "No description provided"}
-                  </p>
-                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      Created:{" "}
-                      {project.created_at && project.created_at.trim() !== ""
-                        ? new Date(project.created_at).toLocaleDateString(
-                            undefined,
-                            {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            }
-                          )
-                        : "N/A"}
-                    </span>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                      Active
-                    </span>
                   </div>
                 </div>
               </div>
@@ -493,31 +496,9 @@ const Home = () => {
           ))}
         </motion.div>
       ) : (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="text-center py-16 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
-        >
-          <Folder className="h-16 w-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            No projects found
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6">
-            {searchTerm
-              ? "No projects match your search criteria."
-              : "You haven't created any projects yet. Create your first project to get started."}
-          </p>
-          <motion.button
-            onClick={() => setShowModal(true)}
-            className="btn btn-primary inline-flex items-center gap-2 px-4 py-3"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <Plus className="h-5 w-5" />
-            <span>Create Your First Project</span>
-          </motion.button>
-        </motion.div>
+        <div className="text-center text-gray-500 dark:text-gray-400 py-12">
+          No projects found.
+        </div>
       )}
 
       {showModal && (
@@ -589,17 +570,17 @@ const Home = () => {
                 <motion.button
                   type="button"
                   onClick={() => setShowRenameModal(false)}
-                  className="btn btn-sm btn-outline"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors duration-200"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   Cancel
                 </motion.button>
                 <motion.button
                   type="submit"
-                  className="btn btn-sm btn-primary"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors duration-200"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   Rename Project
                 </motion.button>
@@ -662,18 +643,18 @@ const Home = () => {
                 <motion.button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="btn btn-sm btn-outline"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors duration-200"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   Cancel
                 </motion.button>
                 <motion.button
                   type="button"
                   onClick={handleDeleteProject}
-                  className="btn btn-sm bg-red-600 hover:bg-red-700 text-white"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors duration-200"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   Delete Project
                 </motion.button>

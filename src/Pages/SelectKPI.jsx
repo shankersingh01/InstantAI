@@ -198,9 +198,9 @@ const SelectKPI = () => {
             <ChevronLeft className="h-6 w-6 text-gray-600 dark:text-gray-400" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Select KPI
-            </h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Select KPI
+          </h1>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Choose a KPI to analyze your data
             </p>
@@ -254,7 +254,7 @@ const SelectKPI = () => {
               <p className="text-red-600 dark:text-red-400 text-sm mt-1">
                 {error}
               </p>
-            </div>
+          </div>
           </motion.div>
         )}
 
@@ -272,7 +272,7 @@ const SelectKPI = () => {
               <p className="text-green-600 dark:text-green-400 text-sm mt-1">
                 {success}
               </p>
-            </div>
+          </div>
           </motion.div>
         )}
 
@@ -289,8 +289,8 @@ const SelectKPI = () => {
               </p>
               <p className="text-blue-600 dark:text-blue-400 text-sm mt-1">
                 Starting analysis... This may take a few moments.
-              </p>
-            </div>
+            </p>
+          </div>
           </motion.div>
         )}
 
@@ -300,26 +300,26 @@ const SelectKPI = () => {
             Available KPIs
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-w-6xl mx-auto">
-            {kpiColumns?.map((kpi) => (
-              <motion.button
-                key={kpi.id}
-                onClick={() => setSelectedKpi(kpi)}
+          {kpiColumns?.map((kpi) => (
+            <motion.button
+              key={kpi.id}
+              onClick={() => setSelectedKpi(kpi)}
                 className={`p-3 rounded-lg border-2 transition-all w-full ${
-                  selectedKpi?.id === kpi.id
+                selectedKpi?.id === kpi.id
                     ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md"
                     : "border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm"
-                }`}
+              }`}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-              >
+            >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {kpi.name}
-                    </h3>
+                {kpi.name}
+              </h3>
                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">
-                      {kpi.description || "No description available"}
-                    </p>
+                {kpi.description || "No description available"}
+              </p>
                   </div>
                   {selectedKpi?.id === kpi.id && (
                     <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
@@ -327,8 +327,8 @@ const SelectKPI = () => {
                     </div>
                   )}
                 </div>
-              </motion.button>
-            ))}
+            </motion.button>
+          ))}
           </div>
         </div>
 

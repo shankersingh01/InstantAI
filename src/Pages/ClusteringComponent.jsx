@@ -493,12 +493,8 @@ const ClusteringComponent = () => {
   }, [clusterHistory, selectedIndex, clusterTree, newkpi]); // Add clusterTree and newkpi as dependencies
 
   const handleNavigateToPath = (pathIndices) => {
-    let selIdx = -1;
-    if (pathIndices.length > 0) {
-      selIdx = pathIndices[pathIndices.length - 1];
-    }
-    if (selIdx === -1 && pathIndices.length === 0) selIdx = -1; // root
-    setCurrentSelectionIndex(selIdx);
+    // Always set currentSelectionIndex to the level (for UI sync, root = 0, first child = 1, etc.)
+    setCurrentSelectionIndex(pathIndices.length);
     setBreadcrumbPath(pathIndices);
     setSelectedClusterIndex(null);
 
@@ -807,7 +803,7 @@ const ClusteringComponent = () => {
               <ChevronRight className="inline-block w-4 h-4 mx-1 text-gray-400" />
               <button
                 className={`text-blue-600 hover:underline ${
-                  i === currentSelectionIndex
+                  i + 1 === currentSelectionIndex
                     ? "font-bold border-b-2 border-indigo-500"
                     : ""
                 }`}

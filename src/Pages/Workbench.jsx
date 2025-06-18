@@ -105,6 +105,40 @@ const Workbench = () => {
   const [plotLayout] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
+  const [currentValues] = useState({});
+
+  // Fetch current values for sub-features when weightData changes
+  // useEffect(() => {
+  //   Object.values(weightData).forEach((subFeaturesArr) => {
+  //     if (Array.isArray(subFeaturesArr)) {
+  //       subFeaturesArr.forEach((item) => {
+  //         if (
+  //           item &&
+  //           item.feature &&
+  //           currentValues[item.feature] === undefined
+  //         ) {
+  //           axios
+  //             .post(`${baseUrl}/bucket-stats/`, { project_id })
+  //             .then((res) => {
+  //               // Assume response is { featureName: value, ... }
+  //               setCurrentValues((prev) => ({
+  //                 ...prev,
+  //                 [item.feature]: res.data[item.feature],
+  //               }));
+  //             })
+  //             .catch(() => {
+  //               setCurrentValues((prev) => ({
+  //                 ...prev,
+  //                 [item.feature]: "N/A",
+  //               }));
+  //             });
+  //         }
+  //       });
+  //     }
+  //   });
+  //   // eslint-disable-next-line
+  // }, [weightData]);
+
   // Save state to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem(
@@ -271,7 +305,7 @@ const Workbench = () => {
         );
         // Fetch cluster journey using the correct endpoint
         const journeyResponse = await axios.get(
-          `${baseUrl}/get-cluster-journey`,
+          `${baseUrl}/get-cluster-journey/`,
           {
             params: {
               project_id: project_id,
@@ -435,6 +469,21 @@ const Workbench = () => {
       idx === index ? !item : item
     );
     setCheckedState(updatedCheckedState);
+
+    // If unchecking, remove all sub-features of this column from adjustments
+    if (checkedState[index]) {
+      if (weightData[index]) {
+        setAdjustments((prev) => {
+          const updated = { ...prev };
+          weightData[index].forEach((item) => {
+            if (item && item.feature) {
+              delete updated[item.feature];
+            }
+          });
+          return updated;
+        });
+      }
+    }
   };
 
   const handleInputChange = (feature, value) => {
@@ -558,6 +607,27 @@ const Workbench = () => {
         }));
 
         setSuccess("Feature ranking completed successfully!");
+
+        // --- Call /bucket-stats/ for current values ---
+        // const bucketStatsRes = await axios.get(
+        //   `${baseUrl}/category-buckets/stats/`,
+        //   {
+        //     params: { project_id },
+        //   }
+        // );
+        // const statsData = bucketStatsRes.data || {};
+        // // For each sub-feature, set its current value if available
+        // const subFeatures = response.data.top_5_feature_importances;
+        // setCurrentValues((prev) => {
+        //   const updated = { ...prev };
+        //   subFeatures.forEach((item) => {
+        //     if (item.feature && statsData[item.feature] !== undefined) {
+        //       updated[item.feature] = statsData[item.feature];
+        //     }
+        //   });
+        //   return updated;
+        // });
+        // --- End bucket-stats logic ---
       } else {
         throw new Error("Invalid response format from feature ranking API");
       }
@@ -629,6 +699,20 @@ const Workbench = () => {
         [childIndex]: !prev[parentIndex]?.[childIndex],
       },
     }));
+
+    // If unchecking, remove this sub-feature from adjustments
+    if (childCheckedState[parentIndex]?.[childIndex]) {
+      if (weightData[parentIndex] && weightData[parentIndex][childIndex]) {
+        const feature = weightData[parentIndex][childIndex].feature;
+        setAdjustments((prev) => {
+          const updated = { ...prev };
+          if (feature) {
+            delete updated[feature];
+          }
+          return updated;
+        });
+      }
+    }
   };
 
   // Handler for sub-feature (child) input changes
@@ -1010,6 +1094,9 @@ const Workbench = () => {
                                         Feature
                                       </th>
                                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                                        Current Value
+                                      </th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                                         Modify To
                                       </th>
                                     </tr>
@@ -1021,11 +1108,11 @@ const Workbench = () => {
                                         false;
                                       return (
                                         <motion.tr
-                                          key={idx}
+                                          key={item.feature}
                                           className="hover:bg-gray-100 dark:hover:bg-gray-700/30"
                                           initial={{ opacity: 0, y: 10 }}
                                           animate={{ opacity: 1, y: 0 }}
-                                          transition={{ delay: idx * 0.05 }}
+                                          transition={{ delay: idx * 0.03 }}
                                         >
                                           <td className="px-4 py-2">
                                             <input
@@ -1043,6 +1130,14 @@ const Workbench = () => {
                                           </td>
                                           <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
                                             {item.feature || "-"}
+                                          </td>
+                                          <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+                                            {currentValues[item.feature] !==
+                                            undefined ? (
+                                              currentValues[item.feature]
+                                            ) : (
+                                              <Loader2 className="w-4 h-4 animate-spin" />
+                                            )}
                                           </td>
                                           <td className="px-4 py-2">
                                             <input
