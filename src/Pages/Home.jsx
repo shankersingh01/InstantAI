@@ -454,7 +454,17 @@ const Home = () => {
                     {project.description}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Created: {new Date(project.created_at).toLocaleString()}
+                    Created:{" "}
+                    {(() => {
+                      const d = new Date(project.created_at);
+                      const day = String(d.getDate()).padStart(2, "0");
+                      const month = String(d.getMonth() + 1).padStart(2, "0");
+                      const year = d.getFullYear();
+                      const hours = String(d.getHours()).padStart(2, "0");
+                      const minutes = String(d.getMinutes()).padStart(2, "0");
+                      const seconds = String(d.getSeconds()).padStart(2, "0");
+                      return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
+                    })()}
                   </p>
                   <div className="flex justify-center gap-2 mt-3">
                     <motion.button
