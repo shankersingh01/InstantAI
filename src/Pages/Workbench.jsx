@@ -105,7 +105,7 @@ const Workbench = () => {
   const [plotLayout] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
-  const [currentValues] = useState({});
+  const [currentValues, setCurrentValues] = useState({});
 
   // Fetch current values for sub-features when weightData changes
   // useEffect(() => {
@@ -608,26 +608,17 @@ const Workbench = () => {
 
         setSuccess("Feature ranking completed successfully!");
 
-        // --- Call /bucket-stats/ for current values ---
-        // const bucketStatsRes = await axios.get(
-        //   `${baseUrl}/category-buckets/stats/`,
-        //   {
-        //     params: { project_id },
-        //   }
-        // );
-        // const statsData = bucketStatsRes.data || {};
-        // // For each sub-feature, set its current value if available
-        // const subFeatures = response.data.top_5_feature_importances;
-        // setCurrentValues((prev) => {
-        //   const updated = { ...prev };
-        //   subFeatures.forEach((item) => {
-        //     if (item.feature && statsData[item.feature] !== undefined) {
-        //       updated[item.feature] = statsData[item.feature];
-        //     }
-        //   });
-        //   return updated;
-        // });
-        // --- End bucket-stats logic ---
+        // Set current values for sub-features using mean_value
+        const subFeatures = response.data.top_5_feature_importances;
+        setCurrentValues((prev) => {
+          const updated = { ...prev };
+          subFeatures.forEach((item) => {
+            if (item.feature && item.mean_value !== undefined) {
+              updated[item.feature] = item.mean_value;
+            }
+          });
+          return updated;
+        });
       } else {
         throw new Error("Invalid response format from feature ranking API");
       }
@@ -1134,7 +1125,23 @@ const Workbench = () => {
                                           <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
                                             {currentValues[item.feature] !==
                                             undefined ? (
-                                              currentValues[item.feature]
+                                              typeof currentValues[
+                                                item.feature
+                                              ] === "number" ? (
+                                                currentValues[
+                                                  item.feature
+                                                ].toFixed(3)
+                                              ) : (
+                                                currentValues[item.feature]
+                                              )
+                                            ) : item.mean_value !==
+                                              undefined ? (
+                                              typeof item.mean_value ===
+                                              "number" ? (
+                                                item.mean_value.toFixed(3)
+                                              ) : (
+                                                item.mean_value
+                                              )
                                             ) : (
                                               <Loader2 className="w-4 h-4 animate-spin" />
                                             )}

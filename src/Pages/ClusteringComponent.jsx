@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { ArrowBigDownDash, ChevronRight } from "lucide-react";
@@ -20,6 +20,7 @@ import SelectableClusterPopup from "../Components/SelectableClustorPopup";
 import { restoreProjectState } from "../redux/projectsSlice";
 import axiosInstance from "../utils/axiosInstance";
 import React from "react";
+import ReactDOM from "react-dom";
 
 // Utility function for Indian number formatting
 function formatIndianNumber(num) {
@@ -77,6 +78,11 @@ const ClusteringComponent = () => {
   const [definitionAbsZScore, setDefinitionAbsZScore] = useState(null);
   const [numericalCellSelection, setNumericalCellSelection] = useState({}); // key: `${feature}-${clusterIndex}`
   const [selectedDropdownValues, setSelectedDropdownValues] = useState({});
+  const [explanation, setExplanation] = useState([]);
+  const [explanationLoading, setExplanationLoading] = useState(false);
+  const [explanationCell, setExplanationCell] = useState(null);
+  const [anchorRect, setAnchorRect] = useState(null);
+  const cellRefs = useRef({});
 
   // Ref to track if processData has been called for the current project and KPI
   const processCalledRef = React.useRef({});
@@ -650,6 +656,56 @@ const ClusteringComponent = () => {
     }
   };
 
+  const fetchExplanation = async (feature, clusterIndex) => {
+    setExplanationLoading(true);
+    setExplanation([]);
+    try {
+      const response = await axiosInstance.post(
+        "/explain-variable-in-segments",
+        {
+          project_id: project_id,
+          selected_kpi: newkpi,
+          column: feature,
+          cluster_index: String(clusterIndex),
+          level: currentLevel,
+        }
+      );
+      if (response.data && Array.isArray(response.data.insights)) {
+        setExplanation(response.data.insights.slice(0, 5));
+      } else {
+        setExplanation([]);
+      }
+    } catch {
+      // Intentionally ignore errors
+    } finally {
+      setExplanationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Reset dialog state when the cluster table changes
+    setExplanationCell(null);
+    setAnchorRect(null);
+    setExplanation([]);
+    setExplanationLoading(false);
+
+    // Fetch top support/oppose segments for the current level
+    const fetchTopSupportOppose = async () => {
+      try {
+        await axiosInstance.post("/top-support-oppose-segments", {
+          project_id: project_id,
+          selected_kpi: newkpi,
+          level: currentLevel,
+        });
+      } catch {
+        // Intentionally ignore errors
+      }
+    };
+    if (project_id && newkpi != null && currentLevel != null) {
+      fetchTopSupportOppose();
+    }
+  }, [breadcrumbPath, journey, currentLevel, project_id, newkpi]);
+
   if (!project_id || !location.state) {
     return (
       <Box
@@ -1047,54 +1103,83 @@ const ClusteringComponent = () => {
                                             }
                                       }
                                     >
-                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
-                                        {typeof displayValue === "number" &&
-                                        !isNaN(displayValue)
-                                          ? formatIndianNumber(displayValue)
-                                          : displayValue}
-                                        {count !== undefined && (
-                                          <span className="ml-2 text-sm text-gray-500">
-                                            ({formatIndianNumber(count)})
-                                          </span>
-                                        )}
-                                        {/* Dropdown for mean/sum toggle */}
-                                        <span
-                                          className="pl-4 cursor-pointer text-xs text-blue-500 underline"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setNumericalCellSelection(
-                                              (prev) => ({
-                                                ...prev,
-                                                [key]:
-                                                  selectedValue === "mean"
-                                                    ? "sum"
-                                                    : "mean",
-                                              })
+                                      <div
+                                        className="relative"
+                                        onDoubleClick={async () => {
+                                          const refKey = `${feature}-${clusterIndex}`;
+                                          const refNode =
+                                            cellRefs.current[refKey];
+                                          if (refNode) {
+                                            setAnchorRect(
+                                              refNode.getBoundingClientRect()
                                             );
+                                            setExplanationCell({
+                                              feature,
+                                              clusterIndex,
+                                            });
+                                            await fetchExplanation(
+                                              feature,
+                                              clusterIndex
+                                            );
+                                          }
+                                        }}
+                                      >
+                                        <div
+                                          ref={(el) => {
+                                            cellRefs.current[
+                                              `${feature}-${clusterIndex}`
+                                            ] = el;
                                           }}
+                                          className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2"
                                         >
-                                          {selectedValue === "mean"
-                                            ? "Show Sum"
-                                            : "Show Mean"}
-                                        </span>
-                                        {/* Option to reset to original value */}
-                                        {numericalCellSelection[key] && (
+                                          {typeof displayValue === "number" &&
+                                          !isNaN(displayValue)
+                                            ? formatIndianNumber(displayValue)
+                                            : displayValue}
+                                          {count !== undefined && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                              ({formatIndianNumber(count)})
+                                            </span>
+                                          )}
+                                          {/* Dropdown for mean/sum toggle */}
                                           <span
-                                            className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                            className="pl-4 cursor-pointer text-xs text-blue-500 underline"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setNumericalCellSelection(
-                                                (prev) => {
-                                                  const newSel = { ...prev };
-                                                  delete newSel[key];
-                                                  return newSel;
-                                                }
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [key]:
+                                                    selectedValue === "mean"
+                                                      ? "sum"
+                                                      : "mean",
+                                                })
                                               );
                                             }}
                                           >
-                                            Reset
+                                            {selectedValue === "mean"
+                                              ? "Show Sum"
+                                              : "Show Mean"}
                                           </span>
-                                        )}
+                                          {/* Option to reset to original value */}
+                                          {numericalCellSelection[key] && (
+                                            <span
+                                              className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setNumericalCellSelection(
+                                                  (prev) => {
+                                                    const newSel = { ...prev };
+                                                    delete newSel[key];
+                                                    return newSel;
+                                                  }
+                                                );
+                                              }}
+                                            >
+                                              Reset
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
                                   );
@@ -1262,54 +1347,83 @@ const ClusteringComponent = () => {
                                             }
                                       }
                                     >
-                                      <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2">
-                                        {typeof displayValue === "number" &&
-                                        !isNaN(displayValue)
-                                          ? formatIndianNumber(displayValue)
-                                          : displayValue}
-                                        {count !== undefined && (
-                                          <span className="ml-2 text-sm text-gray-500">
-                                            ({formatIndianNumber(count)})
-                                          </span>
-                                        )}
-                                        {/* Dropdown for mean/sum toggle */}
-                                        <span
-                                          className="pl-4 cursor-pointer text-xs text-blue-500 underline"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setNumericalCellSelection(
-                                              (prev) => ({
-                                                ...prev,
-                                                [key]:
-                                                  selectedValue === "mean"
-                                                    ? "sum"
-                                                    : "mean",
-                                              })
+                                      <div
+                                        className="relative"
+                                        onDoubleClick={async () => {
+                                          const refKey = `${feature}-${clusterIndex}`;
+                                          const refNode =
+                                            cellRefs.current[refKey];
+                                          if (refNode) {
+                                            setAnchorRect(
+                                              refNode.getBoundingClientRect()
                                             );
+                                            setExplanationCell({
+                                              feature,
+                                              clusterIndex,
+                                            });
+                                            await fetchExplanation(
+                                              feature,
+                                              clusterIndex
+                                            );
+                                          }
+                                        }}
+                                      >
+                                        <div
+                                          ref={(el) => {
+                                            cellRefs.current[
+                                              `${feature}-${clusterIndex}`
+                                            ] = el;
                                           }}
+                                          className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors flex items-center gap-2"
                                         >
-                                          {selectedValue === "mean"
-                                            ? "Show Sum"
-                                            : "Show Mean"}
-                                        </span>
-                                        {/* Option to reset to original value */}
-                                        {numericalCellSelection[key] && (
+                                          {typeof displayValue === "number" &&
+                                          !isNaN(displayValue)
+                                            ? formatIndianNumber(displayValue)
+                                            : displayValue}
+                                          {count !== undefined && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                              ({formatIndianNumber(count)})
+                                            </span>
+                                          )}
+                                          {/* Dropdown for mean/sum toggle */}
                                           <span
-                                            className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                            className="pl-4 cursor-pointer text-xs text-blue-500 underline"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setNumericalCellSelection(
-                                                (prev) => {
-                                                  const newSel = { ...prev };
-                                                  delete newSel[key];
-                                                  return newSel;
-                                                }
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [key]:
+                                                    selectedValue === "mean"
+                                                      ? "sum"
+                                                      : "mean",
+                                                })
                                               );
                                             }}
                                           >
-                                            Reset
+                                            {selectedValue === "mean"
+                                              ? "Show Sum"
+                                              : "Show Mean"}
                                           </span>
-                                        )}
+                                          {/* Option to reset to original value */}
+                                          {numericalCellSelection[key] && (
+                                            <span
+                                              className="pl-2 cursor-pointer text-xs text-gray-400 underline"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setNumericalCellSelection(
+                                                  (prev) => {
+                                                    const newSel = { ...prev };
+                                                    delete newSel[key];
+                                                    return newSel;
+                                                  }
+                                                );
+                                              }}
+                                            >
+                                              Reset
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
                                   );
@@ -1402,9 +1516,90 @@ const ClusteringComponent = () => {
         >
           Download CSV
         </button>
+
+        {explanationCell &&
+          anchorRect &&
+          ReactDOM.createPortal(
+            <>
+              {/* Overlay for click-away close */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100vw",
+                  height: "100vh",
+                  zIndex: 9998,
+                }}
+                onClick={() => {
+                  setExplanationCell(null);
+                  setAnchorRect(null);
+                  setExplanation([]);
+                  setExplanationLoading(false);
+                }}
+              />
+              <div
+                style={{
+                  position: "fixed",
+                  left: anchorRect.left + window.scrollX + anchorRect.width / 2,
+                  top: anchorRect.top + window.scrollY - 12,
+                  transform: "translate(-50%, -100%)",
+                  zIndex: 9999,
+                  minWidth: 320,
+                  maxWidth: 600,
+                  background: "white",
+                  border: "1px solid #d1d5db",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 14,
+                  color: "#1e293b",
+                  overflow: "auto",
+                  maxHeight: 320,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Close button */}
+                <button
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 12,
+                    background: "none",
+                    border: "none",
+                    fontSize: 20,
+                    cursor: "pointer",
+                    color: "#888",
+                  }}
+                  aria-label="Close"
+                  onClick={() => {
+                    setExplanationCell(null);
+                    setAnchorRect(null);
+                    setExplanation([]);
+                    setExplanationLoading(false);
+                  }}
+                >
+                  ×
+                </button>
+                {explanationLoading ? (
+                  <CircularProgress size={18} />
+                ) : explanation.length > 0 ? (
+                  <ul style={{ paddingLeft: 18, margin: 0 }}>
+                    {explanation.map((item, idx) => (
+                      <li key={idx} style={{ marginBottom: 6 }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span>No insights available.</span>
+                )}
+              </div>
+            </>,
+            document.body
+          )}
       </div>
     </div>
   );
 };
-
 export default ClusteringComponent;
