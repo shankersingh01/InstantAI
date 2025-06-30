@@ -87,6 +87,10 @@ const ClusteringComponent = () => {
   // Ref to track if processData has been called for the current project and KPI
   const processCalledRef = React.useRef({});
 
+  // Add state for topSupportOpposeSegments
+  const [topSupportOpposeSegments, setTopSupportOpposeSegments] =
+    useState(null);
+
   // Fetch and restore project state on mount
   useEffect(() => {
     const fetchAndRestoreProject = async () => {
@@ -692,13 +696,17 @@ const ClusteringComponent = () => {
     // Fetch top support/oppose segments for the current level
     const fetchTopSupportOppose = async () => {
       try {
-        await axiosInstance.post("/top-support-oppose-segments", {
-          project_id: project_id,
-          selected_kpi: newkpi,
-          level: currentLevel,
-        });
+        const response = await axiosInstance.post(
+          "/top-support-oppose-segments",
+          {
+            project_id: project_id,
+            selected_kpi: newkpi,
+            level: currentLevel,
+          }
+        );
+        setTopSupportOpposeSegments(response.data);
       } catch {
-        // Intentionally ignore errors
+        setTopSupportOpposeSegments(null);
       }
     };
     if (project_id && newkpi != null && currentLevel != null) {
@@ -901,31 +909,41 @@ const ClusteringComponent = () => {
                           >
                             Segments/Parameters
                           </th>
-                          {currentClusters.map((_, index) => (
-                            <th
-                              key={index}
-                              scope="col"
-                              className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer ${
-                                selectedClusterIndex === index
-                                  ? "bg-indigo-200"
-                                  : ""
-                              }`}
-                              onClick={() => handleColumnHeaderClick(index)}
-                            >
-                              <div className="flex items-center justify-start min-w-[120px] max-w-[120px]">
-                                Segment {index + 1}
-                                <button
-                                  className="ml-2 p-1 rounded-full hover:bg-gray-200 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownload(index);
-                                  }}
-                                >
-                                  <ArrowBigDownDash className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </th>
-                          ))}
+                          {currentClusters.map((_, index) => {
+                            let stance =
+                              topSupportOpposeSegments?.stance?.[index];
+                            let borderClass =
+                              stance === "SUPPORT"
+                                ? "border-2 border-green-500"
+                                : stance === "OPPOSE"
+                                ? "border-2 border-red-500"
+                                : "";
+                            return (
+                              <th
+                                key={index}
+                                scope="col"
+                                className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer ${
+                                  selectedClusterIndex === index
+                                    ? "bg-indigo-200"
+                                    : ""
+                                } ${borderClass}`}
+                                onClick={() => handleColumnHeaderClick(index)}
+                              >
+                                <div className="flex items-center justify-start min-w-[120px] max-w-[120px]">
+                                  Segment {index + 1}
+                                  <button
+                                    className="ml-2 p-1 rounded-full hover:bg-gray-200 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDownload(index);
+                                    }}
+                                  >
+                                    <ArrowBigDownDash className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -948,6 +966,16 @@ const ClusteringComponent = () => {
                                   {feature}
                                 </td>
                                 {currentClusters.map((_, clusterIndex) => {
+                                  let stance =
+                                    topSupportOpposeSegments?.stance?.[
+                                      clusterIndex
+                                    ];
+                                  let borderClass =
+                                    stance === "SUPPORT"
+                                      ? "border-2 border-green-500"
+                                      : stance === "OPPOSE"
+                                      ? "border-2 border-red-500"
+                                      : "";
                                   // For categorical columns
                                   if (
                                     groupedClusters.top1?.[feature]?.[
@@ -965,7 +993,7 @@ const ClusteringComponent = () => {
                                     return (
                                       <td
                                         key={clusterIndex}
-                                        className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                        className={`px-6 py-4 whitespace-nowrap text-sm ${borderClass} ${
                                           currentLevel > 0 &&
                                           journey[currentLevel - 1] &&
                                           journey[currentLevel - 1].feature ===
@@ -1000,49 +1028,47 @@ const ClusteringComponent = () => {
                                               }
                                         }
                                       >
-                                        <div className="relative">
-                                          <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
-                                            {value}
-                                            {percentage !== undefined && (
-                                              <span className="ml-2 text-sm text-gray-500">
-                                                - {percentage}{" "}
-                                                <span
-                                                  className="pl-4"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleDropdown(
-                                                      e,
-                                                      feature,
-                                                      clusterIndex
-                                                    );
-                                                  }}
-                                                >
-                                                  ▼
-                                                </span>
+                                        <div className="cursor-pointer hover:bg-indigo-50 p-2 rounded transition-colors hover:underline">
+                                          {value}
+                                          {percentage !== undefined && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                              - {percentage}{" "}
+                                              <span
+                                                className="pl-4"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  toggleDropdown(
+                                                    e,
+                                                    feature,
+                                                    clusterIndex
+                                                  );
+                                                }}
+                                              >
+                                                ▼
                                               </span>
-                                            )}
-                                          </div>
-                                          {openDropdowns[
-                                            `${feature}-${clusterIndex}`
-                                          ] && (
-                                            <ClusterDropdown
-                                              groupedClusters={groupedClusters}
-                                              feature={feature}
-                                              handleCellClick={handleCellClick}
-                                              toggleDropdown={toggleDropdown}
-                                              clusterIndex={clusterIndex}
-                                              analysis={
-                                                currentClusters[clusterIndex]
-                                                  ?.analysis?.[feature]
-                                              }
-                                              selectedValue={
-                                                selectedDropdownValues[
-                                                  `${feature}-${clusterIndex}`
-                                                ]
-                                              }
-                                            />
+                                            </span>
                                           )}
                                         </div>
+                                        {openDropdowns[
+                                          `${feature}-${clusterIndex}`
+                                        ] && (
+                                          <ClusterDropdown
+                                            groupedClusters={groupedClusters}
+                                            feature={feature}
+                                            handleCellClick={handleCellClick}
+                                            toggleDropdown={toggleDropdown}
+                                            clusterIndex={clusterIndex}
+                                            analysis={
+                                              currentClusters[clusterIndex]
+                                                ?.analysis?.[feature]
+                                            }
+                                            selectedValue={
+                                              selectedDropdownValues[
+                                                `${feature}-${clusterIndex}`
+                                              ]
+                                            }
+                                          />
+                                        )}
                                       </td>
                                     );
                                   }
@@ -1068,7 +1094,7 @@ const ClusteringComponent = () => {
                                   return (
                                     <td
                                       key={clusterIndex}
-                                      className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                      className={`px-6 py-4 whitespace-nowrap text-sm ${borderClass} ${
                                         currentLevel > 0 &&
                                         journey[currentLevel - 1] &&
                                         journey[currentLevel - 1].feature ===
@@ -1194,6 +1220,16 @@ const ClusteringComponent = () => {
                                   {feature}
                                 </td>
                                 {currentClusters.map((_, clusterIndex) => {
+                                  let stance =
+                                    topSupportOpposeSegments?.stance?.[
+                                      clusterIndex
+                                    ];
+                                  let borderClass =
+                                    stance === "SUPPORT"
+                                      ? "border-2 border-green-500"
+                                      : stance === "OPPOSE"
+                                      ? "border-2 border-red-500"
+                                      : "";
                                   // For categorical columns
                                   if (
                                     groupedClusters.top1?.[feature]?.[
@@ -1211,7 +1247,7 @@ const ClusteringComponent = () => {
                                     return (
                                       <td
                                         key={clusterIndex}
-                                        className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                        className={`px-6 py-4 whitespace-nowrap text-sm ${borderClass} ${
                                           currentLevel > 0 &&
                                           journey[currentLevel - 1] &&
                                           journey[currentLevel - 1].feature ===
@@ -1312,7 +1348,7 @@ const ClusteringComponent = () => {
                                   return (
                                     <td
                                       key={clusterIndex}
-                                      className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                      className={`px-6 py-4 whitespace-nowrap text-sm ${borderClass} ${
                                         currentLevel > 0 &&
                                         journey[currentLevel - 1] &&
                                         journey[currentLevel - 1].feature ===
